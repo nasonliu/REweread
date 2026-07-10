@@ -1,0 +1,71 @@
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local agent/design workspaces
+.superpowers/
+.codex/
+
+# Build output and fetched dependencies
+apps/weread-qt/build/
+build/
+cmake-build-*/
+CMakeUserPresets.json
+downloads/
+packages/
+third_party/
+tmp/
+
+# Runtime state and logs
+**/logs/
+**/state/
+**/cache/
+**/books/
+**/covers/
+*.log
+*.pid
+*.core
+core
+
+# Credentials and account state
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+config.lua
+session.json
+credentials.json
+cookies.json
+
+# WeRead user data
+shelf.json
+book-status.json
+downloads.json
+reader-progress.json
+reader-bookmarks.json
+reader-highlights.json
+reader-strokes.json
+social-comments-cache.json
+reviews.json
+
+# Books and extracted content
+*.epub
+*.mobi
+*.azw
+*.azw3
+*.pdf
+*.cbz
+*.cbr
+*.xhtml
+
+# Local release archives
+*.tar
+*.tar.gz
+*.tgz
+*.zip

@@ -1,0 +1,269 @@
+# rm-weread
+
+面向 reMarkable Paper Pro Move 的非官方微信读书客户端实验项目。
+
+本仓库的主要读者是接手开发、构建、部署和排障的 AI Agent。仓库只保存源码、测试和操作文档；SDK、XOVI、AppLoad、KOReader、字体、登录态、书架缓存、封面和电子书文件都必须从外部获取，不能提交到 Git。
+
+> 当前状态：设备内测版。核心阅读流程已经能在 Paper Pro Move 真机运行，但安装仍属于开发者/社区软件流程，不适合普通用户直接安装，也不应在完成许可审查前公开商业分发。
+
+## Agent 从这里开始
+
+接手任务后按以下顺序工作：
+
+1. 完整阅读 [AGENTS.md](AGENTS.md)。
+2. 运行仓库安全检查：`node scripts/check-repository.mjs`。
+3. 运行静态验证：`node tests/run-all.mjs`。
+4. 根据任务阅读 [依赖清单](docs/dependencies.md) 和 [故障排查](docs/troubleshooting.md)。
+5. 需要碰真机时，先使用 USB SSH 默认地址 `root@10.11.99.1`；只有用户明确提供新的地址时才设置 `MOVE_HOST`。
+6. 真机操作前确认不会覆盖 `/home/root/.local/share/rm-weread/` 中的账号、进度、批注和缓存。
+7. 完成后再次运行安全检查、静态验证和与改动风险相匹配的真机验证。
+
+不要从旧文档猜当前实现。当前产品入口是 `apps/weread-qt/`，`apps/weread-move/` 主要提供 Lua 网络/内容辅助层和早期原型。
+
+## 产品目标
+
+目标是在 954 x 1696 的彩色墨水屏上提供一个接近原生阅读器的微信读书体验：
+
+- 九宫格彩色封面书架和书籍详情页。
+- 设备端扫码登录、退出和 Cookie 续期。
+- 按当前进度优先下载章节，支持整本缓存和离线阅读。
+- 中文重排、字体/字号/行距/段距/页边距设置及设置持久化。
+- 目录、书签、进度保存与微信读书进度同步。
+- 图片、图注、章节标题、注释和表格的阅读器排版。
+- 热门划线评论按当前页延迟加载并缓存。
+- 手写笔高亮、橡皮擦和防手触。
+- Wi-Fi、前灯、电源键、磁吸保护套休眠以及返回系统。
+- 墨水屏友好的高对比度、低动画和可控刷新。
+
+## 当前实现
+
+当前主程序是 Qt 6 / Qt Quick 应用：
+
+```text
+apps/weread-qt/
+  Main.qml                 当前 UI 和交互入口
+  *_store.cpp/.h           书架、阅读、下载、账号、评论、网络、灯光和电源桥接
+  SocialAnchor.js          评论划线范围映射
+
+apps/weread-move/
+  lib/                     缓存、分页、下载和 WeRead 辅助代码
+  tools/                   Qt 通过 QProcess 调用的 Lua 工具
+  views/ + native_app.lua  早期 Lua 原型，不是当前产品入口
+```
+
+运行时数据流：
+
+```text
+Qt Quick UI
+  -> C++ Store
+  -> KOReader 提供的 LuaJIT
+  -> apps/weread-move/tools/*.lua
+  -> weread.koplugin 的 client/content/cookie 模块
+  -> 微信读书 Skill API 或 Web API
+  -> /home/root/.local/share/rm-weread/
+```
+
+这意味着 UI 已经是独立 APP，但网络和内容层目前仍依赖 KOReader 的 LuaJIT 以及 `weread.koplugin`。在替换这两层之前，不要把项目描述为“完全无 KOReader 运行时依赖”。
+
+## 支持范围
+
+已验证基线：
+
+| 项目 | 基线 |
+| --- | --- |
+| 设备 | reMarkable Paper Pro Move (`chiappa`) |
+| 分辨率 | 954 x 1696，RGB565 彩色墨水屏 |
+| 设备系统镜像 | 5.7.126，构建 `20260612085811` |
+| 官方 SDK | chiappa 5.7.119 |
+| Qt | 设备自带 Qt 6.8.2 |
+| KOReader 运行时 | v2025.10（建议后续验证更新版） |
+| XOVI | v19-23052026 |
+| AppLoad | v0.5.3 |
+
+其他设备、其他分辨率或其他系统版本都视为未验证。reMarkable 官方明确不保证 Xochitl 不同版本之间兼容，XOVI/AppLoad 也可能随系统升级失效。
+
+## 外部依赖
+
+所有依赖必须下载到 Git 忽略的 `downloads/`、Docker volume 或设备目录中。完整版本、地址、许可证和更新规则见 [docs/dependencies.md](docs/dependencies.md)。关键入口：
+
+- [reMarkable Developer Portal](https://developer.remarkable.com/)
+- [reMarkable SDK 下载列表](https://developer.remarkable.com/links)
+- [reMarkable 官方示例](https://github.com/reMarkable/remarkable-developer-examples)
+- [XOVI](https://github.com/asivery/xovi)
+- [AppLoad](https://github.com/asivery/rm-appload)
+- [KOReader](https://github.com/koreader/koreader)
+- [weread.koplugin](https://github.com/QiuYukang/weread.koplugin)
+- [LXGW WenKai](https://github.com/lxgw/LxgwWenKai)
+- [WenQuanYi](https://sourceforge.net/projects/wqy/)
+
+仓库不使用 Git submodule。外部源码不得复制到 `third_party/` 后提交。
+
+## 本地准备
+
+需要：
+
+- macOS 或 Linux 主机。
+- Docker；Apple Silicon 使用 `linux/arm64` 容器。
+- Node.js 18 或更新版本，用于验证脚本。
+- `ssh`、`scp`、`rsync`、`curl`。
+- 已进入 Developer Mode 的 Paper Pro Move。
+
+Developer Mode 会降低设备安全性，并可能在首次启用时清除设备数据。让用户先阅读 reMarkable 的[官方说明](https://developer.remarkable.com/documentation/developer-mode)，不要由 Agent 静默开启。
+
+### 1. 准备 SDK
+
+```bash
+./scripts/bootstrap-remarkable-sdk.sh
+```
+
+脚本会把官方 chiappa SDK 下载到被忽略的 `downloads/official-sdk/`，校验 SHA-256，然后安装到 Docker volume `rm_chiappa_sdk`。SDK 不进入仓库。
+
+### 2. 准备字体
+
+```bash
+./scripts/download-reader-fonts.sh
+```
+
+字体会进入被忽略的 `downloads/fonts/`。脚本校验固定版本的文件摘要。
+
+### 3. 构建
+
+```bash
+./scripts/build-weread-qt.sh
+```
+
+输出为：
+
+```text
+apps/weread-qt/build/rm_weread_qt
+```
+
+构建脚本会先把固定版本的 QR Code Generator 下载并校验到被忽略的 `downloads/sources/`，再把该外部路径传给 CMake，不会写入源码树。
+
+## 设备依赖
+
+当前安装器假设设备已经具备：
+
+```text
+/home/root/xovi/
+/home/root/xovi/exthome/appload/
+/home/root/xovi/exthome/appload/koreader/luajit
+/home/root/xovi/exthome/appload/koreader/plugins/weread.koplugin/
+```
+
+推荐通过社区包管理器安装 XOVI/AppLoad；具体来源见依赖文档。`weread.koplugin` 需要用户自行从上游仓库安装。不要把插件源码、用户 `config.lua` 或 API Key 打进本项目安装包。
+
+## 安装与开发部署
+
+默认通过 USB SSH：
+
+```bash
+MOVE_HOST=root@10.11.99.1 ./scripts/install-weread-qt-appload.sh
+```
+
+通过 Wi-Fi 调试时，用户需要先在设备上明确启用 WLAN SSH，然后传入地址：
+
+```bash
+MOVE_HOST=root@DEVICE_IP ./scripts/install-weread-qt-appload.sh
+```
+
+安装器会复制主程序、字体和 Lua 辅助文件，创建 AppLoad 图标，并安装 XOVI 的 Xochitl drop-in。它不会删除：
+
+```text
+/home/root/.local/share/rm-weread/
+```
+
+开发中快速覆盖并启动：
+
+```bash
+MOVE_HOST=root@10.11.99.1 RUN_SECONDS=0 ./scripts/run-weread-qt-on-move.sh
+```
+
+当前官方 Qt 路线运行时会停止 Xochitl，退出后由 `weread-qt-session.sh` 恢复。Wi-Fi 连接通常仍在，但 reMarkable 系统 UI 和 `rm-sync` 在阅读期间不可用。不要在应用运行时执行系统升级或恢复出厂设置。
+
+## 登录和本地数据
+
+扫码登录由设备端生成二维码，登录 Cookie 保存到：
+
+```text
+/home/root/.local/share/rm-weread/session.json
+```
+
+书架、封面、书籍、阅读进度、评论缓存和本地批注也都在：
+
+```text
+/home/root/.local/share/rm-weread/
+```
+
+这些文件只能留在设备或用户明确指定的私有备份中。禁止放入 issue、日志、截图附件或 Git 提交。切换账号时缓存会保留；当前缓存还没有按账号隔离，因此 Agent 不得把一个用户的缓存用于另一个用户的调试样本。
+
+## 验证
+
+本地基础验证：
+
+```bash
+node scripts/check-repository.mjs
+node tests/run-all.mjs
+for file in scripts/*.sh apps/weread-move/*.sh; do bash -n "$file"; done
+```
+
+注意：`tests/run-all.mjs` 主要是源码契约和静态回归，不等于真机端到端测试。
+
+真机验证会启动/停止 APP 和 Xochitl，只能在用户允许时执行：
+
+```bash
+MOVE_HOST=root@10.11.99.1 ./scripts/verify-weread-qt-device.sh
+```
+
+发布前还要按 [docs/release-checklist.md](docs/release-checklist.md) 做冷启动、重启、休眠、登录、翻页、评论、下载和卸载验证。
+
+## 常见故障入口
+
+| 现象 | Agent 第一检查点 |
+| --- | --- |
+| AppLoad 图标消失 | Xochitl 是否带 `LD_PRELOAD=/home/root/xovi/xovi.so`，drop-in 是否还在 |
+| 点击图标第一次无反应 | AppLoad launcher 是否提前退出，旧进程/临时 systemd unit 是否残留 |
+| 白屏或闪退 | `/tmp/rm-weread-qt.err`、`/tmp/rm-weread-qt-session.log`，Qt/SDK 版本是否匹配 |
+| 扫码后一直等待 | `login-qr.lua` 是否使用当前 `/api/auth/getLoginUid` 和 `/api/auth/getLoginInfo` 流程 |
+| 书架为空 | API Key、Cookie 状态、`refresh-shelf.lua` 和 `shelf.json`，不要打印真实值 |
+| 评论有数据但无虚线 | `pageStart/pageEnd`、`TextEdit.positionAt()` 和 `readerSocialTouchLayer` |
+| 点击评论后卡死 | 只加载当前页、3 秒停留延迟、取消上一页请求、等待浮窗完成后再发下一请求 |
+| 字号变化后进度跳动 | 保存并恢复 `textOffset`，不要只保存 `pageIndex` |
+| 底部大面积空白 | 用真实正文页测试分页，章节末尾例外；不要用版权页判断 |
+| 电源键/保护套无效 | 区分 `KEY_POWER`、`SW_LID`、`SW_MACHINE_COVER` 与应用层手势 |
+| 系统升级后 APP 消失 | `/usr/lib` 会被系统镜像替换，重新验证并安装兼容的 XOVI/AppLoad 和 drop-in |
+
+完整命令和判断树见 [docs/troubleshooting.md](docs/troubleshooting.md)。
+
+## 仓库安全规则
+
+以下内容永远不能提交：
+
+- `wrk-...` API Key、Cookie、Access Token、二维码 UID、设备密码或私钥。
+- `config.lua`、`session.json`、`.env` 和任何凭据导出。
+- `shelf.json`、阅读进度、评论缓存、批注、设备日志或用户截图。
+- EPUB、PDF、MOBI、AZW、书籍图片、封面缓存和解包章节。
+- reMarkable SDK、XOVI/AppLoad 压缩包、KOReader、字体二进制和其他第三方源码。
+- `build/`、`downloads/`、`packages/`、`tmp/`、`third_party/`。
+
+提交前必须运行：
+
+```bash
+node scripts/check-repository.mjs
+```
+
+如果安全检查命中，不要简单删除规则。先确认文件来源，移出仓库，再轮换任何可能已经暴露的凭据。
+
+## 发布边界
+
+项目使用微信读书的 Skill API 和未公开 Web 接口。接口可能随时变化，微信读书用户协议也限制未经授权的第三方软件、插件和接口接入。公开发布前必须：
+
+1. 保留项目的 MIT 许可证和版权声明。
+2. 完成所有第三方代码和字体的许可证审查；项目 MIT 许可证不会覆盖它们。
+3. 避免使用会让用户误以为是腾讯官方产品的名称、图标和文案。
+4. 评估微信读书接口、账号、内容缓存和评论数据的合规风险。
+5. 提供安装、升级、卸载、数据清理、系统恢复和免责声明。
+
+在这些事项完成前，仓库应保持私有或明确标记为个人研究/设备内测项目。
+
+这个长期开发工作区的旧分支和本地 Git 对象可能包含早期设备标识或测试样本。公开 GitHub 时必须从当前已清洗文件创建单一根提交；不要对本地开发仓库执行 `git push --all` 或 `git push --mirror`。
