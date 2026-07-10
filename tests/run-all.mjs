@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 
 const scripts = [
+  'validate-agent-developer-onboarding.mjs',
   'validate-app-manifest.mjs',
   'validate-book-id-canonical.mjs',
   'validate-book-info-service.mjs',

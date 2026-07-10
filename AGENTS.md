@@ -20,6 +20,38 @@ The current product is the Qt application under `apps/weread-qt/`. The Lua code 
 
 Run `node scripts/check-repository.mjs` before and after every repository-wide task.
 
+## Developer Mode and first SSH access
+
+There is no separate developer account to create for this project. The user enables Developer Mode on a supported Paper Pro device. Before giving any activation or SSH instructions, the Agent must tell the user all of the following and wait for explicit confirmation:
+
+- Enabling Developer Mode for the first time performs a factory reset and destroys unsynced local data.
+- It weakens the Secure Boot trust chain and device security, and adds an unavoidable warning during boot.
+- Damage caused by custom modifications may fall outside official warranty or Protection Plan support.
+- The user must finish cloud sync or another backup and enable Developer Mode personally.
+- The Agent will not request, echo, store or commit the device password or any private SSH key.
+
+Official activation path:
+
+```text
+Settings -> General -> Paper Tablet -> Software -> Advanced -> Developer Mode
+```
+
+Official SSH credential path after activation:
+
+```text
+Settings -> General -> Help -> About -> Copyrights and Licenses -> General Information
+```
+
+That screen provides the current SSH username (`root` in the official documentation) and a randomly generated password. It does not provide an SSH private key. The user should enter the password directly into an interactive terminal for the first USB connection:
+
+```bash
+ssh root@10.11.99.1
+```
+
+For unattended follow-up work, ask the user to install a host-generated public key in `/home/root/.ssh/authorized_keys`; never ask them to paste the password or private key into chat. Do not use `sshpass`, password-bearing environment variables, `StrictHostKeyChecking=no`, or password-bearing command lines.
+
+Wi-Fi SSH is off by default. Enable it only after explicit user approval with `rm-ssh-over-wlan on`, starting from the USB connection. Full user-facing instructions and official links are in the root `README.md`.
+
 ## Source of truth
 
 | Area | Source |

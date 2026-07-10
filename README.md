@@ -16,9 +16,10 @@
 2. 运行仓库安全检查：`node scripts/check-repository.mjs`。
 3. 运行静态验证：`node tests/run-all.mjs`。
 4. 根据任务阅读 [依赖清单](docs/dependencies.md) 和 [故障排查](docs/troubleshooting.md)。
-5. 需要碰真机时，先使用 USB SSH 默认地址 `root@10.11.99.1`；只有用户明确提供新的地址时才设置 `MOVE_HOST`。
-6. 真机操作前确认不会覆盖 `/home/root/.local/share/rm-weread/` 中的账号、进度、批注和缓存。
-7. 完成后再次运行安全检查、静态验证和与改动风险相匹配的真机验证。
+5. 需要碰真机时，先执行下方“Developer Mode 与 SSH”中的用户确认流程。
+6. 用户完成 Developer Mode 和 SSH 准备后，优先使用 USB 地址 `root@10.11.99.1`；只有用户明确提供新的地址时才设置 `MOVE_HOST`。
+7. 真机操作前确认不会覆盖 `/home/root/.local/share/rm-weread/` 中的账号、进度、批注和缓存。
+8. 完成后再次运行安全检查、静态验证和与改动风险相匹配的真机验证。
 
 不要从旧文档猜当前实现。当前产品入口是 `apps/weread-qt/`，`apps/weread-move/` 主要提供 Lua 网络/内容辅助层和早期原型。
 
@@ -84,6 +85,96 @@ Qt Quick UI
 
 其他设备、其他分辨率或其他系统版本都视为未验证。reMarkable 官方明确不保证 Xochitl 不同版本之间兼容，XOVI/AppLoad 也可能随系统升级失效。
 
+## Developer Mode 与 SSH
+
+### 没有单独的“开发者账号”
+
+本项目不要求注册独立的 reMarkable 开发者账号。官方流程是在支持的 Paper Pro 系列设备上开启 Developer Mode。普通 reMarkable 云账号只用于同步和备份；首次开启 Developer Mode 前必须先确认重要内容已经同步。
+
+官方入口：
+
+- [Developer Mode 官方说明](https://developer.remarkable.com/documentation/developer-mode)
+- [reMarkable Developer Portal](https://developer.remarkable.com/)
+- [创建和配对普通 reMarkable 云账号](https://support.remarkable.com/articles/Knowledge/Pair-your-reMarkable-with-the-cloud)
+
+### Agent 必须先提示用户
+
+在引导开启 Developer Mode 或执行任何 SSH 命令前，Agent 必须明确告诉用户：
+
+1. 首次开启 Developer Mode 会执行恢复出厂，设备上尚未同步的本地数据会丢失。
+2. Developer Mode 会削弱 Secure Boot 的信任链和设备安全性，并在每次开机时显示警告。
+3. 因自行修改导致的问题可能不属于官方保修或 Protection Plan 支持范围。
+4. 用户需要先完成云同步或独立备份，并亲自在设备上开启 Developer Mode。
+5. Agent 不会索取、显示、记录或提交 SSH 密码和私钥。
+
+Agent 必须等待用户明确确认“备份完成并同意开启”，不能静默开启，也不能把恢复出厂当作普通安装步骤。
+
+### 用户开启 Developer Mode
+
+在设备上依次打开：
+
+```text
+Settings
+  -> General
+  -> Paper Tablet
+  -> Software
+  -> Advanced
+  -> Developer Mode
+```
+
+按照屏幕提示完成恢复出厂和重新设置。Developer Mode 开启后会一直保持，关闭它需要使用官方 Recovery 流程。
+
+### 去哪里找 SSH 登录信息
+
+Developer Mode 开启后，在设备上依次打开：
+
+```text
+Settings
+  -> General
+  -> Help
+  -> About
+  -> Copyrights and Licenses
+  -> General Information
+```
+
+这里会显示 SSH 用户名和随机生成的密码。官方文档当前给出的用户名是 `root`。通过 USB-C 把设备连接到电脑后，默认地址是：
+
+```bash
+ssh root@10.11.99.1
+```
+
+首次连接时由用户在终端提示符中亲自输入设备显示的密码。不要把密码粘贴到 README、聊天记录、issue、日志、脚本、环境变量或 Git 提交中；Agent 也不得要求用户发送包含密码的截图。
+
+### SSH 密码与 SSH 密钥不是一回事
+
+reMarkable 显示的是 SSH 密码，不会提供可下载的 SSH 私钥。若希望 Agent 后续免密码连接，应在用户自己的电脑上生成密钥对，只把公钥安装到设备：
+
+```bash
+test -f ~/.ssh/id_ed25519.pub || ssh-keygen -t ed25519
+cat ~/.ssh/id_ed25519.pub | ssh root@10.11.99.1 \
+  'umask 077; mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys'
+```
+
+运行第二条命令时，用户仍需亲自输入一次设备显示的随机密码。私钥 `~/.ssh/id_ed25519` 必须始终留在用户电脑上；仓库、Agent 输出和设备安装包中都不能包含它。
+
+如果 SSH 提示主机指纹发生变化，Agent 必须停下来让用户确认设备是否刚恢复出厂，不能用 `StrictHostKeyChecking=no` 绕过检查。
+
+### 可选：启用 Wi-Fi SSH
+
+官方默认关闭 Wi-Fi SSH。先通过 USB 登录，再由用户明确同意后运行：
+
+```bash
+ssh root@10.11.99.1 'rm-ssh-over-wlan on'
+```
+
+之后才使用设备当前 WLAN 地址：
+
+```bash
+MOVE_HOST=root@DEVICE_IP ./scripts/install-weread-qt-appload.sh
+```
+
+Agent 不得假设 WLAN 地址固定，也不得在未告知用户的情况下开放 Wi-Fi SSH。
+
 ## 外部依赖
 
 所有依赖必须下载到 Git 忽略的 `downloads/`、Docker volume 或设备目录中。完整版本、地址、许可证和更新规则见 [docs/dependencies.md](docs/dependencies.md)。关键入口：
@@ -108,9 +199,7 @@ Qt Quick UI
 - Docker；Apple Silicon 使用 `linux/arm64` 容器。
 - Node.js 18 或更新版本，用于验证脚本。
 - `ssh`、`scp`、`rsync`、`curl`。
-- 已进入 Developer Mode 的 Paper Pro Move。
-
-Developer Mode 会降低设备安全性，并可能在首次启用时清除设备数据。让用户先阅读 reMarkable 的[官方说明](https://developer.remarkable.com/documentation/developer-mode)，不要由 Agent 静默开启。
+- 已按上方流程进入 Developer Mode 并配置好 USB SSH 的 Paper Pro Move。
 
 ### 1. 准备 SDK
 

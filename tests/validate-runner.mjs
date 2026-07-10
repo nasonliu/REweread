@@ -8,6 +8,7 @@ assert(fs.statSync('tests/run-all.mjs').isFile(), 'tests/run-all.mjs must exist'
 const runner = fs.readFileSync('tests/run-all.mjs', 'utf8');
 
 for (const script of [
+  'validate-agent-developer-onboarding.mjs',
   'validate-app-manifest.mjs',
   'validate-book-id-canonical.mjs',
   'validate-book-info-service.mjs',
