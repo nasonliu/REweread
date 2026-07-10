@@ -158,4 +158,3 @@ third_party/weread.koplugin/lib/cookie.lua
 - `getinfo` 的轮询间隔、状态码和字段。
 - `wxCode` 和 `session/init` 哪个是当前 Web 实际使用的最终建连接口。
 - Move 端二维码显示方案：KOReader 内显示 PNG/SVG，或临时 HTML/图片。
-

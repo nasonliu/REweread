@@ -15,6 +15,8 @@ constexpr const char *kHallInputName = "Hall effect sensors";
 constexpr char kWakeLockName[] = "rm-weread-qt";
 constexpr const char *kWakeLockPath = "/sys/power/wake_lock";
 constexpr const char *kWakeUnlockPath = "/sys/power/wake_unlock";
+constexpr const char *kBatteryCapacityPath = "/sys/class/power_supply/max77818_battery/capacity";
+constexpr const char *kBatteryStatusPath = "/sys/class/power_supply/max77818_battery/status";
 constexpr qint64 kMaximumShortPressMs = 1600;
 }
 
@@ -25,6 +27,10 @@ PowerStore::PowerStore(QObject *parent)
     acquireWakeLock();
     openInputDevice(QString::fromLatin1(kPowerInputName));
     openInputDevice(QString::fromLatin1(kHallInputName));
+    reloadBattery();
+    m_batteryTimer.setInterval(60000);
+    connect(&m_batteryTimer, &QTimer::timeout, this, &PowerStore::reloadBattery);
+    m_batteryTimer.start();
 }
 
 PowerStore::~PowerStore() {
@@ -50,6 +56,40 @@ bool PowerStore::hardwareAvailable() const {
 
 QString PowerStore::lastReason() const {
     return m_lastReason;
+}
+
+int PowerStore::batteryLevel() const {
+    return m_batteryLevel;
+}
+
+bool PowerStore::charging() const {
+    return m_charging;
+}
+
+void PowerStore::reloadBattery() {
+    QFile capacityFile(QString::fromLatin1(kBatteryCapacityPath));
+    QFile statusFile(QString::fromLatin1(kBatteryStatusPath));
+    int nextLevel = m_batteryLevel;
+    bool nextCharging = m_charging;
+
+    if (capacityFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        bool ok = false;
+        const int value = QString::fromUtf8(capacityFile.readAll()).trimmed().toInt(&ok);
+        if (ok) {
+            nextLevel = qBound(0, value, 100);
+        }
+    }
+    if (statusFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        const QString status = QString::fromUtf8(statusFile.readAll()).trimmed();
+        nextCharging = status.compare(QStringLiteral("Charging"), Qt::CaseInsensitive) == 0
+            || status.compare(QStringLiteral("Full"), Qt::CaseInsensitive) == 0;
+    }
+    if (nextLevel == m_batteryLevel && nextCharging == m_charging) {
+        return;
+    }
+    m_batteryLevel = nextLevel;
+    m_charging = nextCharging;
+    emit batteryChanged();
 }
 
 void PowerStore::commitSleep() {

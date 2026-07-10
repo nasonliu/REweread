@@ -29,7 +29,10 @@ Window {
     property int shelfPageIndex: 0
     property int shelfPageCount: Math.max(1, Math.ceil(shelfStore.books.length / 9))
     property int readerBottomGestureHeight: 56
-    property int readerContentBottom: root.height - root.readerBottomGestureHeight
+    property int readerFooterHeight: 46
+    property int readerFooterGap: root.readerLinePixels()
+    property int readerFooterTop: root.height - root.readerBottomGestureHeight - root.readerFooterHeight
+    property int readerContentBottom: root.readerFooterTop - root.readerFooterGap
     property int readerCatalogPanelWidth: Math.round(root.width * 0.56)
     property int readerTextTopMargin: 96
     property int readerImageTopMargin: 72
@@ -80,6 +83,7 @@ Window {
     property string readerLeadingPunctuationCharacters: "，。！？；：、…」』）)”》〉】〕〗〙〛"
     property string readerEndingPunctuationCharacters: "“‘（《〈【〔〖〘〚「『"
     property var frontlightLevels: [0, 10, 20, 40, 60, 80, 100]
+    property var readerQuickFrontlightLevels: [0, 25, 50, 75, 100]
     property var keyboardRows: [
         ["伊", "朗", "五", "百", "年", "书", "史", "文", "学", "传"],
         ["的", "一", "是", "在", "人", "中", "国", "小", "说", "记"],
@@ -1087,7 +1091,7 @@ Window {
     }
 
     function readerBottomSafety() {
-        return Math.min(8, readerParagraphSpacing)
+        return Math.min(10, Math.max(6, readerParagraphSpacing))
     }
 
     function readerEstimatedParagraphGap() {
@@ -3463,18 +3467,23 @@ Window {
             return true
         }
         if (readerSettingsPanel.height > 812
-                && root.readerPointInRect(lx, ly, 102, 790, 142, 58)) {
+                && root.readerPointInRect(lx, ly, 24, 790, 128, 58)) {
+            root.exitReaderToShelf()
+            return true
+        }
+        if (readerSettingsPanel.height > 812
+                && root.readerPointInRect(lx, ly, 164, 790, 128, 58)) {
             root.forceReaderRefresh += 1
             return true
         }
         if (readerSettingsPanel.height > 812
-                && root.readerPointInRect(lx, ly, 252, 790, 142, 58)
+                && root.readerPointInRect(lx, ly, 304, 790, 128, 58)
                 && !progressSyncStore.running) {
             progressSyncStore.syncProgress(root.currentBookId, root.currentReaderProgressPercent(), root.currentReaderSummaryText(), root.currentReaderElapsedSeconds())
             return true
         }
         if (readerSettingsPanel.height > 812
-                && root.readerPointInRect(lx, ly, 402, 790, 142, 58)
+                && root.readerPointInRect(lx, ly, 444, 790, 128, 58)
                 && !progressSyncStore.running) {
             progressSyncStore.pullProgress(root.currentBookId)
             return true
@@ -3761,7 +3770,7 @@ Window {
             id: shelfTitle
             x: 44
             y: 54
-            width: root.width - 390
+            width: 350
             text: "书架"
             color: root.inkColor
             font.pixelSize: 44
@@ -3779,7 +3788,7 @@ Window {
         }
 
         Rectangle {
-            x: root.width - 150
+            x: root.width - 242
             y: 56
             width: 104
             height: 46
@@ -3806,7 +3815,7 @@ Window {
         }
 
         Rectangle {
-            x: root.width - 278
+            x: root.width - 370
             y: 56
             width: 116
             height: 46
@@ -3832,7 +3841,7 @@ Window {
         }
 
         Rectangle {
-            x: root.width - 430
+            x: root.width - 522
             y: 56
             width: 140
             height: 46
@@ -3858,6 +3867,31 @@ Window {
             }
         }
 
+        Rectangle {
+            id: shelfExitSystemButton
+            x: root.width - 126
+            y: 56
+            width: 82
+            height: 46
+            radius: 4
+            color: root.surfaceColor
+            border.color: root.inkColor
+            border.width: 2
+
+            Text {
+                anchors.centerIn: parent
+                text: "退出"
+                color: root.inkColor
+                font.pixelSize: 20
+                font.bold: true
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: appControl.quitToSystem()
+            }
+        }
+
         Item {
             id: shelfGrid
             x: 44
@@ -3872,7 +3906,8 @@ Window {
             DragHandler {
                 id: shelfPageSwipeHandler
                 target: null
-                acceptedDevices: PointerDevice.TouchScreen
+                acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Mouse
+                grabPermissions: PointerHandler.CanTakeOverFromAnything
                 dragThreshold: 18
 
                 onActiveChanged: {
@@ -3933,14 +3968,15 @@ Window {
                         visible: source !== ""
                     }
 
-	                    MouseArea {
-	                        anchors.fill: parent
-	                        onClicked: {
-	                            root.detailBookOverride = ({})
-	                            root.selectedIndex = bookIndex
-	                            root.screenName = "detail"
-	                            shelfStore.refreshBookDetails(book.bookId)
-	                        }
+                    TapHandler {
+                        acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Mouse | PointerDevice.Stylus
+                        gesturePolicy: TapHandler.ReleaseWithinBounds
+                        onTapped: {
+                            root.detailBookOverride = ({})
+                            root.selectedIndex = bookIndex
+                            root.screenName = "detail"
+                            shelfStore.refreshBookDetails(book.bookId)
+                        }
                     }
                 }
 
@@ -6202,6 +6238,12 @@ Window {
         id: readerPage
         anchors.fill: parent
         visible: root.screenName === "reader"
+        onVisibleChanged: {
+            if (visible) {
+                powerStore.reloadBattery()
+                frontlightStore.reload()
+            }
+        }
 
         property var book: shelfStore.books[root.selectedIndex] || ({})
 
@@ -6275,6 +6317,100 @@ Window {
             }
         }
 
+        Rectangle {
+            id: readerQuickFrontlight
+            x: root.width - 370
+            y: 28
+            width: 260
+            height: 42
+            z: 10
+            radius: height / 2
+            color: root.paperColor
+            border.color: root.inkColor
+            border.width: 2
+            clip: true
+            property int currentPercent: frontlightStore.powered
+                ? Math.round(frontlightStore.brightness / Math.max(1, frontlightStore.maxBrightness) * 100)
+                : 0
+
+            Repeater {
+                model: root.readerQuickFrontlightLevels
+
+                Rectangle {
+                    x: index * 52
+                    y: 0
+                    width: 52
+                    height: 42
+                    property bool selected: Math.abs(readerQuickFrontlight.currentPercent - modelData) <= 13
+                    color: selected ? root.inkColor : root.paperColor
+
+                    Rectangle {
+                        x: 0
+                        y: 7
+                        width: 1
+                        height: parent.height - 14
+                        visible: index > 0
+                        color: parent.selected ? root.paperColor : root.inkColor
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: modelData === 0 ? "关" : modelData
+                        color: parent.selected ? root.paperColor : root.inkColor
+                        font.pixelSize: 14
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: root.applyFrontlightPercent(modelData)
+                    }
+                }
+            }
+        }
+
+        Item {
+            id: readerBatteryIndicator
+            x: root.width - 92
+            y: 34
+            width: 58
+            height: 30
+            z: 10
+
+            Rectangle {
+                x: 0
+                y: 2
+                width: 50
+                height: 26
+                radius: 3
+                color: root.paperColor
+                border.color: root.inkColor
+                border.width: 2
+
+                Repeater {
+                    model: 4
+
+                    Rectangle {
+                        x: 5 + index * 10
+                        y: 5
+                        width: 8
+                        height: 16
+                        color: root.inkColor
+                        visible: powerStore.batteryLevel >= 10 + index * 25
+                    }
+                }
+            }
+
+            Rectangle {
+                x: 50
+                y: 9
+                width: 5
+                height: 12
+                radius: 1
+                color: root.inkColor
+            }
+        }
+
         Image {
             x: root.readerMargin
             y: root.readerImageTopMargin
@@ -6313,6 +6449,44 @@ Window {
             focus: false
             wrapMode: TextEdit.Wrap
             onLinkActivated: root.handleReaderLink(link)
+        }
+
+        Rectangle {
+            x: root.readerMargin
+            y: root.readerFooterTop
+            width: root.width - root.readerMargin * 2
+            height: 1
+            z: 3
+            color: root.inkColor
+        }
+
+        Text {
+            x: root.readerMargin
+            y: root.readerFooterTop + 9
+            width: (root.width - root.readerMargin * 2) / 2
+            height: root.readerFooterHeight - 9
+            z: 3
+            text: "第 " + (root.pageIndex + 1) + " / " + Math.max(1, root.readerCachedPageCount) + " 页"
+            color: root.inkColor
+            font.pixelSize: 18
+            font.family: root.readerFontFamily
+            font.bold: true
+            verticalAlignment: Text.AlignVCenter
+        }
+
+        Text {
+            x: root.width / 2
+            y: root.readerFooterTop + 9
+            width: root.width / 2 - root.readerMargin
+            height: root.readerFooterHeight - 9
+            z: 3
+            text: "进度 " + Math.round(root.currentReaderProgressPercent()) + "%"
+            color: root.inkColor
+            font.pixelSize: 18
+            font.family: root.readerFontFamily
+            font.bold: true
+            horizontalAlignment: Text.AlignRight
+            verticalAlignment: Text.AlignVCenter
         }
 
         Repeater {
@@ -6730,7 +6904,7 @@ Window {
             x: 0
             y: 90
             width: root.width / 2
-            height: root.height - root.readerBottomGestureHeight - 90
+            height: Math.max(0, root.readerContentBottom - 90)
             z: 6
             enabled: !root.showReaderSettings && !root.showReaderCatalog && !root.showReaderSocialPopup
             property real startX: 0
@@ -6749,7 +6923,7 @@ Window {
             x: root.width / 2
             y: 90
             width: root.width / 2
-            height: root.height - root.readerBottomGestureHeight - 90
+            height: Math.max(0, root.readerContentBottom - 90)
             z: 6
             enabled: !root.showReaderSettings && !root.showReaderCatalog && !root.showReaderSocialPopup
             property real startX: 0
@@ -7532,20 +7706,35 @@ Window {
                 visible: parent.height > 812
             }
 
-            Text {
+            Rectangle {
                 x: 24
-                y: 806
-                text: "刷新"
+                y: 798
+                width: 128
+                height: 42
+                radius: 7
                 color: root.inkColor
-                font.pixelSize: 20
-                font.bold: true
+                border.color: root.inkColor
+                border.width: 1
                 visible: parent.height > 812
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "退出到书架"
+                    color: root.paperColor
+                    font.pixelSize: 16
+                    font.bold: true
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: root.exitReaderToShelf()
+                }
             }
 
             Rectangle {
-                x: 102
+                x: 164
                 y: 798
-                width: 132
+                width: 128
                 height: 42
                 radius: 7
                 color: root.surfaceColor
@@ -7568,9 +7757,9 @@ Window {
             }
 
             Rectangle {
-                x: 252
+                x: 304
                 y: 798
-                width: 132
+                width: 128
                 height: 42
                 radius: 7
                 color: progressSyncStore.running ? root.inkColor : root.surfaceColor
@@ -7594,9 +7783,9 @@ Window {
             }
 
             Rectangle {
-                x: 402
+                x: 444
                 y: 798
-                width: 132
+                width: 128
                 height: 42
                 radius: 7
                 color: progressSyncStore.running ? root.inkColor : root.surfaceColor
@@ -7620,9 +7809,9 @@ Window {
             }
 
             Text {
-                x: 552
+                x: 588
                 y: 798
-                width: parent.width - 580
+                width: parent.width - 612
                 height: 42
                 text: progressSyncStore.statusText
                 color: root.inkColor
@@ -8261,21 +8450,4 @@ Window {
         }
     }
 
-    MouseArea {
-        id: systemExitGestureArea
-        x: root.width - 120
-        y: 0
-        width: 120
-        height: 160
-        z: 20
-        property real startY: 0
-        onPressed: function(mouse) {
-            startY = mouse.y
-        }
-        onReleased: function(mouse) {
-            if (mouse.y - startY > 70) {
-                appControl.quitToSystem()
-            }
-        }
-    }
 }

@@ -13,11 +13,14 @@ const session = fs.readFileSync('scripts/weread-qt-session.sh', 'utf8');
 const runner = fs.readFileSync('scripts/run-weread-qt-on-move.sh', 'utf8');
 
 assert(header.includes('class PowerStore'), 'Qt app must expose a dedicated power lifecycle bridge');
+assert(header.includes('Q_PROPERTY(int batteryLevel') && header.includes('Q_PROPERTY(bool charging'), 'power bridge must expose the Move battery state');
 assert(source.includes('44440000.bbnsm:pwrkey'), 'power bridge must discover the Move power key by device name');
 assert(source.includes('Hall effect sensors'), 'power bridge must discover the Move Hall sensor input');
 assert(source.includes('code != SW_LID'), 'folio handling must ignore the pen-holder Hall sensor');
 assert(source.includes('kMaximumShortPressMs'), 'power bridge must distinguish short presses from long presses');
 assert(source.includes('/sys/power/wake_lock') && source.includes('/sys/power/wake_unlock'), 'power bridge must use the device autosleep wake-lock contract');
+assert(source.includes('/sys/class/power_supply/max77818_battery/capacity'), 'battery status must come from the Move main battery rather than marker accessories');
+assert(source.includes('m_batteryTimer.setInterval(60000)'), 'battery status must refresh periodically without polling every frame');
 assert(!source.includes('poweroff') && !source.includes('/sys/power/state'), 'reader power handling must never invoke shutdown or bypass the device sleep stack');
 assert(!source.includes('/usr/bin/systemctl') && !source.includes('QStringLiteral("suspend")'), 'short press must let the device autosleep stack choose the display-safe suspend time');
 assert(source.indexOf('acquireWakeLock();', source.indexOf('void PowerStore::resume')) < source.indexOf('m_sleeping = false', source.indexOf('void PowerStore::resume')), 'resume must reacquire the wake lock before restoring UI state');

@@ -49,4 +49,3 @@ console.log(JSON.stringify({
   response: body,
   renewedCookieNames: renewedNames,
 }, null, 2));
-

@@ -7,21 +7,23 @@ const height = 1696;
 const margin = 64;
 const topY = 96;
 const bottomGestureHeight = 56;
+const footerHeight = 46;
 
 const paragraphs = [
-  '伊朗的历史并不是一条平直的道路。王朝、宗教、部落、帝国和革命不断交错，每一次政治秩序的重建都伴随着社会结构的重新排列。',
-  '在漫长的近代转型中，城市、乡村和边疆地区对于国家权力的理解并不相同。中央政权试图建立统一制度，地方社会则以自己的方式保存传统。',
-  '这种张力解释了许多看似突然的历史事件。革命并非凭空发生，它往往是长期财政压力、宗教动员、外部干预和知识分子传播共同作用的结果。',
-  '对于普通读者来说，理解这一段历史最困难的地方并不是记住年代，而是把制度变化、思想变化和日常生活经验放在同一张地图上观察。',
-  '因此，叙述必须给读者留下足够的连续性。每一页都应该尽量利用屏幕，让段落自然延展，而不是因为过分保守的分页估算留下大片空白。'
+  '清晨的街道还没有完全醒来，窗外的光线慢慢越过屋檐。人们沿着熟悉的路线前行，又在细小的变化中重新认识这座城市。',
+  '一本书的节奏来自句子，也来自段落之间恰当的停顿。连续的文字需要稳定地铺满页面，同时为读者留下清楚而自然的呼吸。',
+  '当字号、行距和页边距发生变化时，阅读位置应当保持稳定。分页算法需要重新计算每一行，却不能让读者突然跳到完全不同的章节。',
+  '在电子纸屏幕上，清晰比装饰更重要。文字必须保持足够的黑度，控件需要直接可靠，每一次翻页也应该快速而明确。',
+  '因此，每一页都应尽量利用可读区域，让段落自然延展。只有章节结束或图文排版确实需要时，页面底部才可以保留更大的空白。'
 ];
 
 const bodyText = Array.from({ length: 80 }, (_, index) => paragraphs[index % paragraphs.length]).join('\n\n');
 
 function paginate(settings) {
-  const readerContentBottom = height - bottomGestureHeight;
   const readerLinePixels = () => Math.ceil(settings.fontSize * settings.lineHeight);
-  const readerBottomSafety = () => Math.min(8, settings.paragraphSpacing);
+  const readerFooterGap = readerLinePixels();
+  const readerContentBottom = height - bottomGestureHeight - footerHeight - readerFooterGap;
+  const readerBottomSafety = () => Math.min(10, Math.max(6, settings.paragraphSpacing));
   const readerBodyHeight = () => {
     const usable = Math.max(0, readerContentBottom - topY - readerBottomSafety());
     const linePx = Math.max(1, readerLinePixels());
