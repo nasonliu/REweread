@@ -25,6 +25,7 @@ for (const script of [
   'validate-detail-rating.mjs',
   'validate-eink-contrast.mjs',
   'validate-launcher-cleanup.mjs',
+  'validate-license-policy.mjs',
   'validate-book-images.mjs',
   'validate-redownload-tool.mjs',
   'validate-koreader-paths.mjs',

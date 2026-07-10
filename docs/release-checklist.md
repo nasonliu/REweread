@@ -8,7 +8,7 @@ The project is not releasable until every blocking item is complete.
 - [ ] `git status --short` contains only intentional source/docs changes.
 - [ ] No SDK, dependency checkout, font, archive, build output or local device data is tracked.
 - [ ] Root README matches the current Qt application and install path.
-- [ ] The MIT license is preserved and all required third-party notices are included.
+- [ ] The PolyForm Noncommercial license, Required Notice and all third-party notices are preserved.
 - [ ] Version and changelog are updated.
 - [ ] Public history starts from a sanitized root commit; old local refs are not pushed with `--all` or `--mirror`.
 
@@ -75,8 +75,9 @@ The project is not releasable until every blocking item is complete.
 
 ## Public distribution
 
+- [ ] No commercial use, paid install, hardware bundle, subscription, advertising or business deployment is offered.
 - [ ] WeRead terms/API/content/privacy risk has been reviewed.
 - [ ] Branding clearly says unofficial and does not impersonate Tencent.
 - [ ] reMarkable Developer Mode and warranty/security warnings are prominent.
 - [ ] Support policy and compatible version matrix are published.
-- [ ] No paid or broad public release occurs without the required permissions.
+- [ ] No binary or broad public release occurs without written Tencent and upstream permissions.

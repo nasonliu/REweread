@@ -142,6 +142,12 @@ Do not reintroduce the stale `/web/login/getuid`, `/web/login/getinfo` or `/web/
 
 ## Release discipline
 
+This is a source-available, noncommercial project under PolyForm Noncommercial 1.0.0, not an OSI-defined open-source project. Do not describe it as MIT, commercially usable or officially authorized. Do not offer paid installation, support, hardware bundles, subscriptions, ads, internal business deployments or commercial licensing.
+
+The repository license only covers code the repository owner can license. It does not authorize WeRead APIs, content, account data, comments, trademarks or third-party dependencies. The WeRead user agreement restricts unauthorized third-party access and distribution even when no money is charged. `weread.koplugin` currently has no explicit upstream LICENSE, so redistribution or derived-code use remains a release blocker.
+
+If anyone asks about commercial use, the Agent must say no under the current license and direct them to `docs/legal-and-commercial-use.md`. A viable commercial product requires written Tencent permission, a resolved upstream rights chain, dependency compliance, privacy/content review and a separate written license from this project's rights holder. The project currently offers no commercial license.
+
 Before calling a build releasable:
 
 - No ignored dependency is tracked.

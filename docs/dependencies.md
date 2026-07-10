@@ -62,10 +62,12 @@ The Web endpoints are not a stable public SDK. Agents must expect response field
 
 ## Licensing boundary
 
-The repository's own source code is released under the root MIT license. That license does not grant rights to WeRead services, book content, third-party runtimes, fonts or trademarks. Do not publish a binary release until the following are resolved:
+The repository's own source code is source-available under the PolyForm Noncommercial License 1.0.0. Commercial use is not permitted, and this restriction means the project is not OSI-defined open source. This license does not grant rights to WeRead services, book content, third-party runtimes, fonts or trademarks. Do not publish a binary release until the following are resolved:
 
-- `weread.koplugin` redistribution permission and any derived-code review.
+- `weread.koplugin` has no explicit upstream LICENSE; obtain permission or replace and review any derived code.
 - QR Code Generator MIT notice in binary distributions.
 - Font license notices.
 - XOVI/AppLoad GPL obligations if any component is redistributed rather than installed separately.
 - WeRead terms, account risk, content caching and trademark/branding review.
+
+No commercial license is currently offered. See `docs/legal-and-commercial-use.md` before any public distribution or business discussion.
