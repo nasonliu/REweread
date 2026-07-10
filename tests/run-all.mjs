@@ -8,6 +8,7 @@ const scripts = [
   'validate-c1-shell.mjs',
   'validate-downloads-view.mjs',
   'validate-ui-polish.mjs',
+  'validate-shelf-swipe.mjs',
   'validate-status-refresh.mjs',
   'validate-partial-downloads.mjs',
   'validate-cover-prefetch.mjs',

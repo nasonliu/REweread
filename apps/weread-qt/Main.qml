@@ -3869,6 +3869,29 @@ Window {
             property real cellHeight: height / 3
             property real coverWidth: Math.min(cellWidth - 24, (cellHeight - 76) * root.coverAspectRatio)
 
+            DragHandler {
+                id: shelfPageSwipeHandler
+                target: null
+                acceptedDevices: PointerDevice.TouchScreen
+                dragThreshold: 18
+
+                onActiveChanged: {
+                    if (active) {
+                        return
+                    }
+                    var dx = translation.x
+                    var dy = translation.y
+                    if (Math.abs(dx) < 92 || Math.abs(dx) < Math.abs(dy) * 1.35) {
+                        return
+                    }
+                    if (dx < 0 && root.shelfPageIndex < root.shelfPageCount - 1) {
+                        root.goShelfPage(1)
+                    } else if (dx > 0 && root.shelfPageIndex > 0) {
+                        root.goShelfPage(-1)
+                    }
+                }
+            }
+
             Repeater {
                 model: 9
 
