@@ -21,10 +21,17 @@ assert(source.includes('Hall effect sensors'), 'power bridge must discover the M
 assert(source.includes('code != SW_LID'), 'folio handling must ignore the pen-holder Hall sensor');
 assert(source.includes('kMaximumShortPressMs'), 'power bridge must distinguish short presses from long presses');
 assert(source.includes('/sys/power/wake_lock') && source.includes('/sys/power/wake_unlock'), 'power bridge must use the device autosleep wake-lock contract');
+assert(header.includes('m_sleepCommitTimer') && source.includes('connect(&m_sleepCommitTimer, &QTimer::timeout, this, &PowerStore::commitSleep)'), 'C++ must release the wake lock even if the QML sleep timer stalls');
+assert(source.includes('power-sleep request') && source.includes('power-sleep commit') && source.includes('power-sleep resume'), 'power transitions must leave token-free device diagnostics');
 assert(source.includes('/sys/class/power_supply/max77818_battery/capacity'), 'battery status must come from the Move main battery rather than marker accessories');
 assert(source.includes('m_batteryTimer.setInterval(60000)'), 'battery status must refresh periodically without polling every frame');
 assert(!source.includes('poweroff') && !source.includes('/sys/power/state'), 'reader power handling must never invoke shutdown or bypass the device sleep stack');
-assert(!source.includes('/usr/bin/systemctl') && !source.includes('QStringLiteral("suspend")'), 'short press must let the device autosleep stack choose the display-safe suspend time');
+assert(source.includes('/usr/bin/systemctl') && source.includes('QStringLiteral("suspend")'), 'sleep must use the official systemd path so device Wi-Fi and wake-source hooks run');
+assert(header.includes('m_suspendRetryTimer') && source.includes('kSuspendRetryDelayMs'), 'a busy display regulator must retry suspend after its protection timer settles');
+assert(source.includes('kMaximumSuspendAttempts') && source.includes('handleSystemSuspendFinished'), 'failed system suspend retries must be bounded and observable');
+assert(header.includes('m_suspendVerifyTimer') && source.includes('systemd-suspend.service'), 'suspend must verify the final systemd unit result instead of trusting job acceptance');
+assert(source.includes('vpdd_timeout_ms') && source.includes('power-sleep wait-vpdd'), 'sleep must wait for the color display VPDD protection timer before releasing the wake lock');
+assert(!source.includes('/sys/power/state'), 'reader power handling must not bypass the official systemd sleep hooks');
 assert(source.indexOf('acquireWakeLock();', source.indexOf('void PowerStore::resume')) < source.indexOf('m_sleeping = false', source.indexOf('void PowerStore::resume')), 'resume must reacquire the wake lock before restoring UI state');
 assert(cmake.includes('power_store.cpp'), 'Qt build must compile PowerStore');
 assert(main.includes('setContextProperty("powerStore"'), 'PowerStore must be available to QML');
@@ -32,6 +39,7 @@ assert(qml.includes('readerStore.saveProgress') && qml.includes('sleepCoverScree
 assert(qml.includes('interval: 750') && qml.includes('powerStore.commitSleep()'), 'cover must get a render window before autosuspend');
 assert(networkHeader.includes('prepareForSleep()') && networkHeader.includes('resumeAfterSleep()'), 'network bridge must expose the sleep lifecycle');
 assert(networkHeader.includes('m_resumeReconnectTimer') && networkSource.includes('m_resumeReconnectTimer.stop()'), 'a repeated sleep must cancel a pending Wi-Fi reconnect');
+assert(networkHeader.includes('m_resumeReconnectAttempts') && networkSource.includes('m_resumeReconnectAttempts < 4'), 'wake must retry while the official Wi-Fi module restore finishes');
 assert(networkSource.includes('QStringLiteral("disconnect")') && networkSource.includes('QStringLiteral("reassociate")'), 'sleep must disconnect Wi-Fi and wake must reconnect without forgetting the saved network');
 assert(qml.includes('networkStore.prepareForSleep()') && qml.includes('networkStore.resumeAfterSleep()'), 'power lifecycle must route sleep and wake through the network bridge');
 assert(qml.includes('selfTestMode === "power-sleep"'), 'power lifecycle needs a dry-run device self-test');

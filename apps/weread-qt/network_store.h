@@ -55,6 +55,7 @@ private:
     QVariantList m_availableNetworks;
     QString m_actionStatus;
     bool m_reconnectAfterSleep = false;
+    int m_resumeReconnectAttempts = 0;
     QTimer m_resumeReconnectTimer;
     QTimer m_resumeReloadTimer;
 };

@@ -13,12 +13,18 @@ NetworkStore::NetworkStore(QObject *parent)
         if (!m_reconnectAfterSleep) {
             return;
         }
+        ++m_resumeReconnectAttempts;
         runWpa(QStringList() << QStringLiteral("reassociate"), 2000);
         m_resumeReloadTimer.start();
     });
     m_resumeReloadTimer.setSingleShot(true);
     m_resumeReloadTimer.setInterval(1200);
-    connect(&m_resumeReloadTimer, &QTimer::timeout, this, &NetworkStore::reload);
+    connect(&m_resumeReloadTimer, &QTimer::timeout, this, [this]() {
+        reload();
+        if (!m_connected && m_reconnectAfterSleep && m_resumeReconnectAttempts < 4) {
+            m_resumeReconnectTimer.start();
+        }
+    });
     reload();
 }
 
@@ -149,6 +155,7 @@ void NetworkStore::connectToSsid(const QString &ssid, const QString &passphrase)
 
 void NetworkStore::disconnectWifi() {
     m_reconnectAfterSleep = false;
+    m_resumeReconnectAttempts = 0;
     m_resumeReconnectTimer.stop();
     m_resumeReloadTimer.stop();
     m_actionStatus = QStringLiteral("正在断开 Wi-Fi...");
@@ -176,6 +183,7 @@ void NetworkStore::forgetNetwork(int networkId) {
 void NetworkStore::prepareForSleep() {
     m_resumeReconnectTimer.stop();
     m_resumeReloadTimer.stop();
+    m_resumeReconnectAttempts = 0;
     m_reconnectAfterSleep = m_reconnectAfterSleep || m_connected;
     if (!m_reconnectAfterSleep) {
         return;
@@ -194,6 +202,7 @@ void NetworkStore::resumeAfterSleep() {
     }
 
     // A cancellable delay avoids reconnecting after a brief folio false wake.
+    m_resumeReconnectAttempts = 0;
     m_resumeReconnectTimer.start();
 }
 
