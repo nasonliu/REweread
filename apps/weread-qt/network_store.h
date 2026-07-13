@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 #include <QVariantList>
 
 class NetworkStore : public QObject {
@@ -32,6 +33,8 @@ public:
     Q_INVOKABLE void connectToSsid(const QString &ssid, const QString &passphrase);
     Q_INVOKABLE void disconnectWifi();
     Q_INVOKABLE void forgetNetwork(int networkId);
+    Q_INVOKABLE void prepareForSleep();
+    Q_INVOKABLE void resumeAfterSleep();
 
 signals:
     void changed();
@@ -51,4 +54,7 @@ private:
     QVariantList m_savedNetworks;
     QVariantList m_availableNetworks;
     QString m_actionStatus;
+    bool m_reconnectAfterSleep = false;
+    QTimer m_resumeReconnectTimer;
+    QTimer m_resumeReloadTimer;
 };
