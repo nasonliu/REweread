@@ -19,6 +19,7 @@ const scripts = [
   'validate-eink-contrast.mjs',
   'validate-launcher-cleanup.mjs',
   'validate-license-policy.mjs',
+  'validate-release-metadata.mjs',
   'validate-book-images.mjs',
   'validate-redownload-tool.mjs',
   'validate-koreader-paths.mjs',

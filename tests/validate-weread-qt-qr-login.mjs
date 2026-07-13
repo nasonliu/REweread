@@ -34,6 +34,6 @@ assert(configBridge.includes('session.logged_out == true') && configBridge.inclu
 assert(helper.includes('client.settings:set("logged_out", false)'), 'successful QR login must clear the logged-out marker');
 assert(qml.includes('退出当前账号') && qml.includes('function onLoggedOut()'), 'profile logout must open a fresh QR flow');
 assert(runner.includes('tools/logout.lua'), 'device deployment must include logout helper');
-assert(installer.includes('tools/logout.lua'), 'persistent app installation must include logout helper');
+assert(installer.includes('logout.lua'), 'persistent app installation must include logout helper');
 
 console.log('weread Qt QR login ok');

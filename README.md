@@ -2,6 +2,8 @@
 
 面向 reMarkable Paper Pro Move 的非官方微信读书客户端实验项目。
 
+当前阶段版本：`1.0.0-rc.1`。这是源码发布候选版，不提供公开二进制安装包。版本说明见 [CHANGELOG](CHANGELOG.md) 和 [1.0.0-rc.1 发布说明](docs/releases/v1.0.0-rc.1.md)。
+
 本仓库的主要读者是接手开发、构建、部署和排障的 AI Agent。仓库只保存源码、测试和操作文档；SDK、XOVI、AppLoad、KOReader、字体、登录态、书架缓存、封面和电子书文件都必须从外部获取，不能提交到 Git。
 
 > **非商用与非官方声明：** 本项目是个人研究和设备内测项目，与腾讯、微信读书或 reMarkable 无隶属、授权、认可或合作关系。项目自当前版本起采用 [PolyForm Noncommercial 1.0.0](LICENSE)，只允许许可证定义的非商用用途；不得收费销售、收费安装、捆绑设备销售、提供付费订阅或托管服务、广告变现，也不得用于企业商业运营。本项目是“源码可用”项目，不是 OSI 定义的开源软件。详见[法律与商业使用说明](docs/legal-and-commercial-use.md)。
@@ -73,6 +75,8 @@ Qt Quick UI
 ## 支持范围
 
 已验证基线：
+
+完整兼容矩阵见 [docs/compatibility.md](docs/compatibility.md)。
 
 | 项目 | 基线 |
 | --- | --- |
@@ -233,6 +237,14 @@ apps/weread-qt/build/rm_weread_qt
 
 构建脚本会先把固定版本的 QR Code Generator 下载并校验到被忽略的 `downloads/sources/`，再把该外部路径传给 CMake，不会写入源码树。
 
+从干净提交生成源码候选包和 SHA-256：
+
+```bash
+./scripts/package-source-release.sh
+```
+
+输出进入被忽略的 `packages/`。该脚本只归档 Git 已跟踪源码，不会打包本地二进制、字体、SDK、设备依赖或用户数据。
+
 ## 设备依赖
 
 当前安装器假设设备已经具备：
@@ -265,6 +277,16 @@ MOVE_HOST=root@DEVICE_IP ./scripts/install-weread-qt-appload.sh
 ```text
 /home/root/.local/share/rm-weread/
 ```
+
+升级时安装器先上传到 staging 目录，再原子替换应用和 AppLoad 入口；旧版本保留在相邻的 `.previous` 目录，后续步骤失败会自动回滚。
+
+卸载应用但默认保留账号、书籍和阅读数据：
+
+```bash
+MOVE_HOST=root@10.11.99.1 ./scripts/uninstall-weread-qt-appload.sh
+```
+
+删除用户数据是独立危险操作，只有用户明确要求后才可使用 `REMOVE_DATA=1` 和脚本要求的完整确认短语。可先设置 `DRY_RUN=1` 查看将执行的动作。
 
 开发中快速覆盖并启动：
 

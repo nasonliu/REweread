@@ -1,0 +1,41 @@
+{
+  "name": "REweread",
+  "version": "1.0.0-rc.1",
+  "releaseType": "source-only",
+  "status": "release-candidate",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "commercialUse": false,
+  "officiallyAuthorized": false,
+  "target": {
+    "device": "reMarkable Paper Pro Move",
+    "codename": "chiappa",
+    "architecture": "aarch64",
+    "resolution": "954x1696"
+  },
+  "tested": {
+    "deviceOs": "5.7.126",
+    "imageVersion": "3.27.3.0",
+    "sdk": "5.7.119",
+    "qt": "6.8.2",
+    "xovi": "v19-23052026",
+    "appload": "v0.5.3",
+    "koreader": "v2025.10"
+  },
+  "included": [
+    "project source",
+    "tests",
+    "build and device scripts",
+    "documentation"
+  ],
+  "excluded": [
+    "application binaries",
+    "SDKs",
+    "fonts",
+    "XOVI",
+    "AppLoad",
+    "KOReader",
+    "weread.koplugin",
+    "credentials and user data",
+    "books, covers and comments"
+  ]
+}
