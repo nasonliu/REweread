@@ -2,6 +2,8 @@
 
 This repository is operated primarily by AI coding agents. Follow this file before changing code or touching a device.
 
+For a new session, read `docs/agent-handoff.md` immediately after this file. It records the current release state, validated device behavior, known traps and next priorities. Do not reconstruct current state from old chat excerpts or legacy prototype files.
+
 ## Mission
 
 Build and maintain an unofficial WeRead reading client for reMarkable Paper Pro Move. The product should feel like a native Chinese e-reader while preserving the device's safety, battery behavior, account data and ability to return to the stock system.
@@ -68,6 +70,7 @@ Wi-Fi SSH is off by default. Enable it only after explicit user approval with `r
 | Install | `scripts/install-weread-qt-appload.sh` |
 | Device session lifecycle | `scripts/weread-qt-session.sh` |
 | Device regression checks | `scripts/verify-weread-qt-device.sh` |
+| Current handoff and known traps | `docs/agent-handoff.md` |
 
 `Main.qml` is currently large. Keep fixes scoped and covered by a focused validation. A future refactor may split it into components, but do not combine a behavior fix with a broad visual refactor unless requested.
 

@@ -17,13 +17,14 @@
 接手任务后按以下顺序工作：
 
 1. 完整阅读 [AGENTS.md](AGENTS.md)。
-2. 运行仓库安全检查：`node scripts/check-repository.mjs`。
-3. 运行静态验证：`node tests/run-all.mjs`。
-4. 根据任务阅读 [依赖清单](docs/dependencies.md) 和 [故障排查](docs/troubleshooting.md)。
-5. 需要碰真机时，先执行下方“Developer Mode 与 SSH”中的用户确认流程。
-6. 用户完成 Developer Mode 和 SSH 准备后，优先使用 USB 地址 `root@10.11.99.1`；只有用户明确提供新的地址时才设置 `MOVE_HOST`。
-7. 真机操作前确认不会覆盖 `/home/root/.local/share/rm-weread/` 中的账号、进度、批注和缓存。
-8. 完成后再次运行安全检查、静态验证和与改动风险相匹配的真机验证。
+2. 阅读 [当前 Agent 交接手册](docs/agent-handoff.md)，不要从旧会话或 Lua 原型猜当前状态。
+3. 运行仓库安全检查：`node scripts/check-repository.mjs`。
+4. 运行静态验证：`node tests/run-all.mjs`。
+5. 根据任务阅读 [依赖清单](docs/dependencies.md) 和 [故障排查](docs/troubleshooting.md)。
+6. 需要碰真机时，先执行下方“Developer Mode 与 SSH”中的用户确认流程。
+7. 用户完成 Developer Mode 和 SSH 准备后，优先使用 USB 地址 `root@10.11.99.1`；只有用户明确提供新的地址时才设置 `MOVE_HOST`。
+8. 真机操作前确认不会覆盖 `/home/root/.local/share/rm-weread/` 中的账号、进度、批注和缓存。
+9. 完成后再次运行安全检查、静态验证和与改动风险相匹配的真机验证。
 
 不要从旧文档猜当前实现。当前产品入口是 `apps/weread-qt/`，`apps/weread-move/` 主要提供 Lua 网络/内容辅助层和早期原型。
 
