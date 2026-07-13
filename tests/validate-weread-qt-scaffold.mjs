@@ -1150,7 +1150,7 @@ assert(appLoadScript.includes('微信读书'), 'AppLoad entry should show a Chin
 assert(appLoadScript.includes('"qtfb": true'), 'AppLoad entry should use qtfb=true so AppLoad lists it reliably');
 assert(appLoadScript.includes('/home/root/xovi/exthome/appload/weread-move'), 'AppLoad installer must replace the single existing WeRead icon');
 assert(appLoadScript.includes('rm -rf /home/root/xovi/exthome/appload/weread-qt'), 'AppLoad installer must remove the temporary duplicate icon');
-assert(appLoadScript.includes('rm -rf "$APPLOAD_DIR"'), 'AppLoad installer must recreate a clean launcher directory');
+assert(appLoadScript.includes('mv "$APPLOAD_DIR" "$APPLOAD_BACKUP"') && appLoadScript.includes('mkdir -p "$APPLOAD_DIR"'), 'AppLoad installer must recreate the launcher directory while retaining rollback');
 assert(appLoadScript.includes('/home/root/xovi/start'), 'AppLoad installer must refresh through XOVI so AppLoad hooks load');
 assert(!appLoadScript.includes('systemctl enable xovi-appload.service'), 'AppLoad installer must not pretend volatile /etc systemd enablement survives reboot');
 assert(!appLoadScript.includes('systemctl link /home/root/xovi/xovi-appload.service'), 'AppLoad installer must not rely on volatile /etc systemd links for persistence');

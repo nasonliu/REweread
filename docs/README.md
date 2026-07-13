@@ -6,6 +6,8 @@
 - `dependencies.md`: external SDK, launcher, runtime, plugin and font sources.
 - `troubleshooting.md`: symptom-first diagnostic guide for AI Agents.
 - `release-checklist.md`: blockers before source or binary release.
+- `compatibility.md`: tested device, OS, SDK and runtime matrix.
+- `releases/`: milestone-specific release notes and known limitations.
 - `weread-web-flow.md`: WeRead browser/API research notes; endpoints are unstable.
 - `weread-native-font-rendering.md`: historical Lua renderer font notes.
 - `weread-native-runtime-proof.md`: historical Lua framebuffer proof.

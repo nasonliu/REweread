@@ -1,6 +1,9 @@
 #include "power_store.h"
 
+#include <QDebug>
+#include <QDir>
 #include <QFile>
+#include <QProcess>
 #include <QRegularExpression>
 #include <QStringList>
 
@@ -17,7 +20,13 @@ constexpr const char *kWakeLockPath = "/sys/power/wake_lock";
 constexpr const char *kWakeUnlockPath = "/sys/power/wake_unlock";
 constexpr const char *kBatteryCapacityPath = "/sys/class/power_supply/max77818_battery/capacity";
 constexpr const char *kBatteryStatusPath = "/sys/class/power_supply/max77818_battery/status";
+constexpr const char *kRegulatorClassPath = "/sys/class/regulator";
 constexpr qint64 kMaximumShortPressMs = 1600;
+constexpr int kSleepCoverRenderDelayMs = 750;
+constexpr int kVpddSafetyDelayMs = 500;
+constexpr int kSuspendResultCheckDelayMs = 1500;
+constexpr int kSuspendRetryDelayMs = 2500;
+constexpr int kMaximumSuspendAttempts = 3;
 }
 
 PowerStore::PowerStore(QObject *parent)
@@ -25,6 +34,20 @@ PowerStore::PowerStore(QObject *parent)
       m_dryRun(qEnvironmentVariableIntValue("RM_WEREAD_POWER_DRY_RUN") != 0) {
     m_clock.start();
     acquireWakeLock();
+    m_sleepCommitTimer.setSingleShot(true);
+    m_sleepCommitTimer.setInterval(kSleepCoverRenderDelayMs);
+    connect(&m_sleepCommitTimer, &QTimer::timeout, this, &PowerStore::commitSleep);
+    m_suspendRetryTimer.setSingleShot(true);
+    m_suspendRetryTimer.setInterval(kSuspendRetryDelayMs);
+    connect(&m_suspendRetryTimer, &QTimer::timeout, this, &PowerStore::startSystemSuspend);
+    m_suspendVerifyTimer.setSingleShot(true);
+    m_suspendVerifyTimer.setInterval(kSuspendResultCheckDelayMs);
+    connect(&m_suspendVerifyTimer, &QTimer::timeout, this, &PowerStore::verifySystemSuspendResult);
+    connect(
+        &m_suspendProcess,
+        QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+        this,
+        &PowerStore::handleSystemSuspendFinished);
     openInputDevice(QString::fromLatin1(kPowerInputName));
     openInputDevice(QString::fromLatin1(kHallInputName));
     reloadBattery();
@@ -93,16 +116,99 @@ void PowerStore::reloadBattery() {
 }
 
 void PowerStore::commitSleep() {
+    m_sleepCommitTimer.stop();
     if (!m_sleepPending || m_sleeping) {
+        return;
+    }
+    const int vpddWaitMs = vpddTimeoutMs();
+    if (vpddWaitMs > 0) {
+        m_sleepCommitTimer.setInterval(vpddWaitMs + kVpddSafetyDelayMs);
+        m_sleepCommitTimer.start();
+        qInfo() << "power-sleep wait-vpdd ms=" << vpddWaitMs;
         return;
     }
     m_sleepPending = false;
     m_sleeping = true;
     emit stateChanged();
-    releaseWakeLock();
+    const bool released = releaseWakeLock();
+    qInfo().noquote() << "power-sleep commit reason=" + m_lastReason
+                      << "released=" << released;
+    m_suspendAttempts = 0;
+    if (!m_dryRun && released) {
+        startSystemSuspend();
+    }
+}
+
+void PowerStore::startSystemSuspend() {
+    if (!m_sleeping || m_suspendProcess.state() != QProcess::NotRunning) {
+        return;
+    }
+    if (m_suspendAttempts > 0) {
+        QProcess::execute(
+            QStringLiteral("/usr/bin/systemctl"),
+            QStringList() << QStringLiteral("reset-failed")
+                          << QStringLiteral("systemd-suspend.service"));
+    }
+    ++m_suspendAttempts;
+    m_suspendProcess.start(
+        QStringLiteral("/usr/bin/systemctl"),
+        QStringList() << QStringLiteral("suspend"));
+    qInfo() << "power-sleep system-suspend attempt=" << m_suspendAttempts;
+}
+
+void PowerStore::handleSystemSuspendFinished(int exitCode, QProcess::ExitStatus exitStatus) {
+    const bool requestAccepted = exitStatus == QProcess::NormalExit && exitCode == 0;
+    qInfo() << "power-sleep system-suspend finished attempt=" << m_suspendAttempts
+            << "exitCode=" << exitCode << "accepted=" << requestAccepted;
+    if (!m_sleeping) {
+        return;
+    }
+    if (requestAccepted) {
+        // systemctl reports that the job was accepted before systemd-sleep has
+        // learned whether the kernel actually entered suspend.
+        m_suspendVerifyTimer.start();
+        return;
+    }
+    scheduleSystemSuspendRetry();
+}
+
+void PowerStore::verifySystemSuspendResult() {
+    if (!m_sleeping) {
+        return;
+    }
+    const int status = QProcess::execute(
+        QStringLiteral("/usr/bin/systemctl"),
+        QStringList() << QStringLiteral("is-failed")
+                      << QStringLiteral("--quiet")
+                      << QStringLiteral("systemd-suspend.service"));
+    const bool failed = status == 0;
+    qInfo() << "power-sleep system-suspend verified attempt=" << m_suspendAttempts
+            << "failed=" << failed;
+    if (failed) {
+        scheduleSystemSuspendRetry();
+    }
+}
+
+void PowerStore::scheduleSystemSuspendRetry() {
+    if (!m_sleeping) {
+        return;
+    }
+    if (m_suspendAttempts >= kMaximumSuspendAttempts) {
+        resume(QStringLiteral("休眠失败"));
+        return;
+    }
+    const int vpddWaitMs = vpddTimeoutMs();
+    m_suspendRetryTimer.setInterval(
+        qMax(kSuspendRetryDelayMs, vpddWaitMs + kVpddSafetyDelayMs));
+    qInfo() << "power-sleep retry-scheduled vpddMs=" << vpddWaitMs
+            << "delayMs=" << m_suspendRetryTimer.interval();
+    m_suspendRetryTimer.start();
 }
 
 void PowerStore::cancelSleep() {
+    m_sleepCommitTimer.stop();
+    m_suspendVerifyTimer.stop();
+    m_suspendRetryTimer.stop();
     if (!m_sleepPending) {
         return;
     }
@@ -257,8 +363,12 @@ void PowerStore::requestSleep(const QString &reason) {
         return;
     }
     m_sleepPending = true;
+    m_suspendAttempts = 0;
+    m_sleepCommitTimer.setInterval(kSleepCoverRenderDelayMs);
     setLastReason(reason);
     emit stateChanged();
+    m_sleepCommitTimer.start();
+    qInfo().noquote() << "power-sleep request reason=" + reason;
     emit prepareSleep(reason);
 }
 
@@ -266,12 +376,17 @@ void PowerStore::resume(const QString &reason, bool suppressPowerRelease) {
     if (!m_sleeping && !m_sleepPending) {
         return;
     }
-    acquireWakeLock();
+    m_sleepCommitTimer.stop();
+    m_suspendVerifyTimer.stop();
+    m_suspendRetryTimer.stop();
+    const bool acquired = acquireWakeLock();
     m_sleeping = false;
     m_sleepPending = false;
     m_suppressPowerRelease = suppressPowerRelease;
     setLastReason(reason);
     emit stateChanged();
+    qInfo().noquote() << "power-sleep resume reason=" + reason
+                      << "acquired=" << acquired;
     emit resumed(reason);
 }
 
@@ -308,6 +423,28 @@ bool PowerStore::writeWakeLockFile(const char *path) const {
     const ssize_t written = ::write(fd, kWakeLockName, expected);
     ::close(fd);
     return written == expected;
+}
+
+int PowerStore::vpddTimeoutMs() const {
+    const QDir regulatorDir(QString::fromLatin1(kRegulatorClassPath));
+    const QStringList entries = regulatorDir.entryList(
+        QStringList() << QStringLiteral("regulator.*"), QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString &entry : entries) {
+        const QString basePath = regulatorDir.filePath(entry);
+        QFile nameFile(basePath + QStringLiteral("/name"));
+        if (!nameFile.open(QIODevice::ReadOnly | QIODevice::Text)
+            || QString::fromUtf8(nameFile.readAll()).trimmed() != QStringLiteral("VPDD")) {
+            continue;
+        }
+        QFile timeoutFile(basePath + QStringLiteral("/device/vpdd_timeout_ms"));
+        if (!timeoutFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            return 0;
+        }
+        bool ok = false;
+        const int timeout = QString::fromUtf8(timeoutFile.readAll()).trimmed().toInt(&ok);
+        return ok ? qMax(0, timeout) : 0;
+    }
+    return 0;
 }
 
 void PowerStore::setLastReason(const QString &reason) {

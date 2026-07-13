@@ -7,6 +7,24 @@
 
 NetworkStore::NetworkStore(QObject *parent)
     : QObject(parent) {
+    m_resumeReconnectTimer.setSingleShot(true);
+    m_resumeReconnectTimer.setInterval(1500);
+    connect(&m_resumeReconnectTimer, &QTimer::timeout, this, [this]() {
+        if (!m_reconnectAfterSleep) {
+            return;
+        }
+        ++m_resumeReconnectAttempts;
+        runWpa(QStringList() << QStringLiteral("reassociate"), 2000);
+        m_resumeReloadTimer.start();
+    });
+    m_resumeReloadTimer.setSingleShot(true);
+    m_resumeReloadTimer.setInterval(1200);
+    connect(&m_resumeReloadTimer, &QTimer::timeout, this, [this]() {
+        reload();
+        if (!m_connected && m_reconnectAfterSleep && m_resumeReconnectAttempts < 4) {
+            m_resumeReconnectTimer.start();
+        }
+    });
     reload();
 }
 
@@ -136,6 +154,10 @@ void NetworkStore::connectToSsid(const QString &ssid, const QString &passphrase)
 }
 
 void NetworkStore::disconnectWifi() {
+    m_reconnectAfterSleep = false;
+    m_resumeReconnectAttempts = 0;
+    m_resumeReconnectTimer.stop();
+    m_resumeReloadTimer.stop();
     m_actionStatus = QStringLiteral("正在断开 Wi-Fi...");
     emit changed();
     const QString out = runWpa(QStringList() << QStringLiteral("disconnect"), 4000);
@@ -156,6 +178,32 @@ void NetworkStore::forgetNetwork(int networkId) {
     reload();
     m_actionStatus = out.contains(QStringLiteral("OK")) ? QStringLiteral("已忘记 Wi-Fi") : QStringLiteral("忘记网络失败");
     emit changed();
+}
+
+void NetworkStore::prepareForSleep() {
+    m_resumeReconnectTimer.stop();
+    m_resumeReloadTimer.stop();
+    m_resumeReconnectAttempts = 0;
+    m_reconnectAfterSleep = m_reconnectAfterSleep || m_connected;
+    if (!m_reconnectAfterSleep) {
+        return;
+    }
+
+    runWpa(QStringList() << QStringLiteral("disconnect"), 1500);
+    m_connected = false;
+    m_address.clear();
+    m_summary = QStringLiteral("Wi-Fi 已休眠");
+    emit changed();
+}
+
+void NetworkStore::resumeAfterSleep() {
+    if (!m_reconnectAfterSleep) {
+        return;
+    }
+
+    // A cancellable delay avoids reconnecting after a brief folio false wake.
+    m_resumeReconnectAttempts = 0;
+    m_resumeReconnectTimer.start();
 }
 
 QString NetworkStore::runText(const QString &program, const QStringList &arguments, int timeoutMs) const {

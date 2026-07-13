@@ -2,11 +2,41 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+APP_VERSION="$(tr -d '[:space:]' <"$ROOT_DIR/VERSION")"
 MOVE_HOST="${MOVE_HOST:-root@10.11.99.1}"
 REMOTE_DIR="${REMOTE_DIR:-/home/root/weread-qt}"
 APPLOAD_DIR="${APPLOAD_DIR:-/home/root/xovi/exthome/appload/weread-move}"
+REMOTE_STAGE="${REMOTE_DIR}.installing"
+REMOTE_BACKUP="${REMOTE_DIR}.previous"
+APPLOAD_BACKUP="${APPLOAD_DIR}.previous"
 LOCAL_BIN="$ROOT_DIR/apps/weread-qt/build/rm_weread_qt"
 SCP=(scp -O)
+SWAPPED=0
+
+rollback_on_error() {
+  local status=$?
+  if [[ "$status" -ne 0 && "$SWAPPED" == "1" ]]; then
+    echo "Install failed; restoring the previous application." >&2
+    ssh "$MOVE_HOST" \
+      "REMOTE_DIR='$REMOTE_DIR' REMOTE_BACKUP='$REMOTE_BACKUP' APPLOAD_DIR='$APPLOAD_DIR' APPLOAD_BACKUP='$APPLOAD_BACKUP' sh -s" <<'REMOTE' || true
+set -eu
+systemctl stop rm-weread-qt.service rm-weread-smoke.service 2>/dev/null || true
+pids="$(pidof rm_weread_qt 2>/dev/null || true)"
+[ -z "$pids" ] || kill $pids 2>/dev/null || true
+rm -rf "$REMOTE_DIR" "$APPLOAD_DIR"
+[ ! -d "$REMOTE_BACKUP" ] || mv "$REMOTE_BACKUP" "$REMOTE_DIR"
+[ ! -d "$APPLOAD_BACKUP" ] || mv "$APPLOAD_BACKUP" "$APPLOAD_DIR"
+systemctl reset-failed xochitl 2>/dev/null || true
+if [ -x /home/root/xovi/start ]; then
+  /home/root/xovi/start >/tmp/rm-weread-install-rollback.log 2>&1 || systemctl start xochitl 2>/dev/null || true
+else
+  systemctl start xochitl 2>/dev/null || true
+fi
+REMOTE
+  fi
+  exit "$status"
+}
+trap rollback_on_error EXIT
 
 if [[ ! -x "$LOCAL_BIN" ]]; then
   echo "Missing built app: $LOCAL_BIN" >&2
@@ -36,35 +66,46 @@ ssh "$MOVE_HOST" 'set -eu
   test -f /home/root/xovi/exthome/appload/koreader/plugins/weread.koplugin/lib/cookie.lua
 '
 
-ssh "$MOVE_HOST" "mkdir -p '$REMOTE_DIR'"
-"${SCP[@]}" "$LOCAL_BIN" "$MOVE_HOST:$REMOTE_DIR/rm_weread_qt"
-"${SCP[@]}" "$ROOT_DIR/scripts/weread-qt-session.sh" "$MOVE_HOST:$REMOTE_DIR/weread-qt-session.sh"
-ssh "$MOVE_HOST" "mkdir -p '$REMOTE_DIR/fonts'"
-"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/wqy-microhei/wqy-microhei.ttc" "$MOVE_HOST:$REMOTE_DIR/fonts/wqy-microhei.ttc"
-"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/wqy-zenhei/wqy-zenhei.ttc" "$MOVE_HOST:$REMOTE_DIR/fonts/wqy-zenhei.ttc"
-"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/lxgw-wenkai/lxgw-wenkai.ttf" "$MOVE_HOST:$REMOTE_DIR/fonts/lxgw-wenkai.ttf"
-ssh "$MOVE_HOST" "rm -rf '$REMOTE_DIR/helper' && mkdir -p '$REMOTE_DIR/helper'"
-"${SCP[@]}" -r "$ROOT_DIR/apps/weread-move/lib" "$MOVE_HOST:$REMOTE_DIR/helper/lib"
-ssh "$MOVE_HOST" "mkdir -p '$REMOTE_DIR/helper/tools'"
-"${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/account-status.lua" "$MOVE_HOST:$REMOTE_DIR/helper/tools/account-status.lua"
-"${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/fetch-catalog.lua" "$MOVE_HOST:$REMOTE_DIR/helper/tools/fetch-catalog.lua"
-"${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/redownload-book.lua" "$MOVE_HOST:$REMOTE_DIR/helper/tools/redownload-book.lua"
-"${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/discover-books.lua" "$MOVE_HOST:$REMOTE_DIR/helper/tools/discover-books.lua"
-"${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/fetch-notes.lua" "$MOVE_HOST:$REMOTE_DIR/helper/tools/fetch-notes.lua"
-"${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/fetch-progress.lua" "$MOVE_HOST:$REMOTE_DIR/helper/tools/fetch-progress.lua"
-"${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/refresh-detail.lua" "$MOVE_HOST:$REMOTE_DIR/helper/tools/refresh-detail.lua"
-"${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/refresh-shelf.lua" "$MOVE_HOST:$REMOTE_DIR/helper/tools/refresh-shelf.lua"
-"${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/login-qr.lua" "$MOVE_HOST:$REMOTE_DIR/helper/tools/login-qr.lua"
-"${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/logout.lua" "$MOVE_HOST:$REMOTE_DIR/helper/tools/logout.lua"
-"${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/renew-cookie.lua" "$MOVE_HOST:$REMOTE_DIR/helper/tools/renew-cookie.lua"
-"${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/sync-progress.lua" "$MOVE_HOST:$REMOTE_DIR/helper/tools/sync-progress.lua"
+ssh "$MOVE_HOST" "rm -rf '$REMOTE_STAGE' && mkdir -p '$REMOTE_STAGE/fonts' '$REMOTE_STAGE/helper/tools'"
+"${SCP[@]}" "$LOCAL_BIN" "$MOVE_HOST:$REMOTE_STAGE/rm_weread_qt"
+"${SCP[@]}" "$ROOT_DIR/scripts/weread-qt-session.sh" "$MOVE_HOST:$REMOTE_STAGE/weread-qt-session.sh"
+"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/wqy-microhei/wqy-microhei.ttc" "$MOVE_HOST:$REMOTE_STAGE/fonts/wqy-microhei.ttc"
+"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/wqy-zenhei/wqy-zenhei.ttc" "$MOVE_HOST:$REMOTE_STAGE/fonts/wqy-zenhei.ttc"
+"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/lxgw-wenkai/lxgw-wenkai.ttf" "$MOVE_HOST:$REMOTE_STAGE/fonts/lxgw-wenkai.ttf"
+"${SCP[@]}" -r "$ROOT_DIR/apps/weread-move/lib" "$MOVE_HOST:$REMOTE_STAGE/helper/lib"
+for tool in \
+  account-status.lua \
+  fetch-catalog.lua \
+  redownload-book.lua \
+  discover-books.lua \
+  fetch-notes.lua \
+  fetch-progress.lua \
+  refresh-detail.lua \
+  refresh-shelf.lua \
+  login-qr.lua \
+  logout.lua \
+  renew-cookie.lua \
+  sync-progress.lua; do
+  "${SCP[@]}" "$ROOT_DIR/apps/weread-move/tools/$tool" "$MOVE_HOST:$REMOTE_STAGE/helper/tools/$tool"
+done
 
-ssh "$MOVE_HOST" "REMOTE_DIR='$REMOTE_DIR' APPLOAD_DIR='$APPLOAD_DIR' sh -s" <<'REMOTE'
+SWAPPED=1
+ssh "$MOVE_HOST" \
+  "REMOTE_DIR='$REMOTE_DIR' REMOTE_STAGE='$REMOTE_STAGE' REMOTE_BACKUP='$REMOTE_BACKUP' APPLOAD_DIR='$APPLOAD_DIR' APPLOAD_BACKUP='$APPLOAD_BACKUP' APP_VERSION='$APP_VERSION' sh -s" <<'REMOTE'
 set -eu
 
-chmod +x "$REMOTE_DIR/weread-qt-session.sh"
+chmod +x "$REMOTE_STAGE/rm_weread_qt" "$REMOTE_STAGE/weread-qt-session.sh"
+systemctl stop rm-weread-qt.service rm-weread-smoke.service 2>/dev/null || true
+pids="$(pidof rm_weread_qt 2>/dev/null || true)"
+[ -z "$pids" ] || kill $pids 2>/dev/null || true
+
+rm -rf "$REMOTE_BACKUP"
+[ ! -d "$REMOTE_DIR" ] || mv "$REMOTE_DIR" "$REMOTE_BACKUP"
+mv "$REMOTE_STAGE" "$REMOTE_DIR"
+
 rm -rf /home/root/xovi/exthome/appload/weread-qt
-rm -rf "$APPLOAD_DIR"
+rm -rf "$APPLOAD_BACKUP"
+[ ! -d "$APPLOAD_DIR" ] || mv "$APPLOAD_DIR" "$APPLOAD_BACKUP"
 mkdir -p "$APPLOAD_DIR"
 
 cat >"$APPLOAD_DIR/external.manifest.json" <<EOF
@@ -72,7 +113,7 @@ cat >"$APPLOAD_DIR/external.manifest.json" <<EOF
   "name": "微信读书",
   "desc": "微信读书",
   "author": "Codex",
-  "version": "0.1.0",
+  "version": "$APP_VERSION",
   "entry": "launch-weread-qt.sh",
   "application": "launch-weread-qt.sh",
   "environment": {
@@ -114,5 +155,7 @@ ssh "$MOVE_HOST" "systemctl disable xovi-appload.service >/dev/null 2>&1 || true
 ssh "$MOVE_HOST" "nohup /home/root/xovi/start >/tmp/rm-weread-qt-appload-refresh.log 2>&1 </dev/null &"
 "$ROOT_DIR/scripts/install-xovi-autostart.sh"
 
+SWAPPED=0
+trap - EXIT
 echo "Installed AppLoad entry at $APPLOAD_DIR"
 echo "Installed persistent XOVI AppLoad startup through xochitl.service drop-in."

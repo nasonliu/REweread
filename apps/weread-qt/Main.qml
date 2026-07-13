@@ -3572,6 +3572,7 @@ Window {
         root.sleepRequestReason = String(reason || "")
         root.sleepOverlayVisible = true
         root.forceReaderRefresh += 1
+        networkStore.prepareForSleep()
         sleepCommitTimer.restart()
     }
 
@@ -3580,6 +3581,7 @@ Window {
         root.sleepOverlayVisible = false
         root.sleepRequestReason = String(reason || "")
         root.forceReaderRefresh += 1
+        networkStore.resumeAfterSleep()
         if (root.screenName === "reader") {
             root.refreshReaderPageCache()
         }

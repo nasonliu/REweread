@@ -2,6 +2,7 @@
 
 #include <QElapsedTimer>
 #include <QObject>
+#include <QProcess>
 #include <QSocketNotifier>
 #include <QString>
 #include <QTimer>
@@ -59,9 +60,14 @@ private:
     void handleHallEvent(unsigned short type, unsigned short code, int value);
     void requestSleep(const QString &reason);
     void resume(const QString &reason, bool suppressPowerRelease = false);
+    void startSystemSuspend();
+    void handleSystemSuspendFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void verifySystemSuspendResult();
+    void scheduleSystemSuspendRetry();
     bool acquireWakeLock();
     bool releaseWakeLock();
     bool writeWakeLockFile(const char *path) const;
+    int vpddTimeoutMs() const;
     void setLastReason(const QString &reason);
 
     QVector<InputDevice *> m_inputs;
@@ -75,6 +81,11 @@ private:
     bool m_dryRun = false;
     int m_batteryLevel = 0;
     bool m_charging = false;
+    QTimer m_sleepCommitTimer;
+    QTimer m_suspendVerifyTimer;
+    QTimer m_suspendRetryTimer;
     QTimer m_batteryTimer;
+    QProcess m_suspendProcess;
+    int m_suspendAttempts = 0;
     QString m_lastReason;
 };
