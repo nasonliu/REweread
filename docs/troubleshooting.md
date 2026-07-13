@@ -1,6 +1,6 @@
 # Troubleshooting for agents
 
-Use this guide after reading `AGENTS.md`. Commands must redact credentials and user content.
+Use this guide after reading `AGENTS.md` and `docs/agent-handoff.md`. Commands must redact credentials and user content. The handoff records the current release baseline and known device-specific traps; this page is the shorter symptom-to-action index.
 
 ## Safe status snapshot
 
@@ -170,6 +170,24 @@ ssh "$MOVE_HOST" 'cat /proc/bus/input/devices | sed -n "1,240p"'
 ```
 
 Look for `KEY_POWER`, `SW_LID` and `SW_MACHINE_COVER`. Use dry-run logging before performing real suspend. On sleep, show the current book cover; on wake, restore the exact reader state and refresh only what is needed.
+
+Do not write `/sys/power/state` directly. Use the official `systemctl suspend` path so the reMarkable sleep hooks can configure wake sources and tear down Wi-Fi safely. A successful `systemctl` exit only means systemd accepted the job; it does not prove the kernel entered deep sleep.
+
+After an e-paper refresh, VPDD may remain protected for about 30 seconds. The application must locate the regulator whose `name` is `VPDD`, wait for its live `vpdd_timeout_ms` to reach zero, release its own wake lock, and then use bounded suspend retries. Do not hard-code a regulator number.
+
+For a controlled test, unplug charging power, close the cover or tap the power key once, wait 45 to 60 seconds, and inspect the kernel journal for `PM: suspend entry (deep)` plus the final wake IRQ. A quick cover close/open during the VPDD window only cancels pending sleep; it is not evidence of deep suspend.
+
+## Local Git or Docker becomes corrupted
+
+If a build filled the disk, stop before retrying Git operations. Symptoms such as `bad tree object`, `packfile ... far too short`, a read-only Docker filesystem, or a build that cannot create files may share the same root cause.
+
+1. Preserve uncommitted source files and user work.
+2. Remove only known generated build output first.
+3. Fully quit and restart Docker after free space is restored.
+4. Re-clone the repository into a clean checkout instead of repairing a truncated Git pack in place.
+5. Compare and migrate required uncommitted files individually.
+
+Do not delete Git objects, run an aggressive prune, or replace a working directory's `.git` folder. Do not prune Docker volumes or unrelated images without explicit user approval.
 
 ## Frontlight level 0 powers off or exits
 
