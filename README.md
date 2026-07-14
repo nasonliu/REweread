@@ -2,7 +2,7 @@
 
 面向 reMarkable Paper Pro Move 的非官方微信读书客户端实验项目。
 
-当前阶段版本：`1.0.0-rc.1`。这是源码发布候选版，不提供公开二进制安装包。版本说明见 [CHANGELOG](CHANGELOG.md) 和 [1.0.0-rc.1 发布说明](docs/releases/v1.0.0-rc.1.md)。
+当前阶段版本：`1.5.0`。这是源码里程碑，不提供公开二进制安装包，也不因本次更新自动创建公开标签或 Release。版本说明见 [CHANGELOG](CHANGELOG.md) 和 [1.5.0 发布说明](docs/releases/v1.5.0.md)。
 
 本仓库的主要读者是接手开发、构建、部署和排障的 AI Agent。仓库只保存源码、测试和操作文档；SDK、XOVI、AppLoad、KOReader、字体、登录态、书架缓存、封面和电子书文件都必须从外部获取，不能提交到 Git。
 
@@ -39,7 +39,8 @@
 - 目录、书签、进度保存与微信读书进度同步。
 - 图片、图注、章节标题、注释和表格的阅读器排版。
 - 热门划线评论按当前页延迟加载并缓存。
-- 手写笔高亮、橡皮擦和防手触。
+- 手写笔高亮、自由手写、块级 OCR、橡皮擦和防手触。
+- 拼音候选翻页、百度 OCR 手写输入法，以及从“我的”页面启动的安全凭据配置。
 - Wi-Fi、前灯、电源键、磁吸保护套休眠以及返回系统。
 - 墨水屏友好的高对比度、低动画和可控刷新。
 
@@ -261,6 +262,11 @@ apps/weread-qt/build/rm_weread_qt
 
 ## 安装与开发部署
 
+从旧版本升级到 1.5.0 时，Agent 应先阅读
+[1.5 Agent 升级指南](docs/agent-upgrade-v1.5.md)。升级使用与首次安装相同的
+原子安装器，但必须保留 `/home/root/.local/share/rm-weread/`，不能为了处理
+OCR、笔迹或登录问题删除用户数据。
+
 默认通过 USB SSH：
 
 ```bash
@@ -280,6 +286,10 @@ MOVE_HOST=root@DEVICE_IP ./scripts/install-weread-qt-appload.sh
 ```
 
 升级时安装器先上传到 staging 目录，再原子替换应用和 AppLoad 入口；旧版本保留在相邻的 `.previous` 目录，后续步骤失败会自动回滚。
+
+安装完成后的手写、输入法和百度 OCR 使用步骤见
+[快速应用指南](docs/quick-start-user-guide.md)。申请与绑定百度 OCR 凭据见
+[百度 OCR 配置指南](docs/baidu-ocr-configuration-flow.md)。
 
 卸载应用但默认保留账号、书籍和阅读数据：
 
@@ -346,6 +356,9 @@ MOVE_HOST=root@10.11.99.1 ./scripts/verify-weread-qt-device.sh
 | 点击评论后卡死 | 只加载当前页、3 秒停留延迟、取消上一页请求、等待浮窗完成后再发下一请求 |
 | 字号变化后进度跳动 | 保存并恢复 `textOffset`，不要只保存 `pageIndex` |
 | 底部大面积空白 | 用真实正文页测试分页，章节末尾例外；不要用版权页判断 |
+| 手写几秒后断笔或自行刷新 | 保存计时器不得在落笔期间运行；临时与持久化笔迹交接不得触发整层重绘 |
+| 百度 OCR 配置失败 | 区分 AppID、API Key、Secret Key，确认应用已开通手写文字识别权限；不要输出实际凭据 |
+| OCR 配置网页打不开 | 地址必须以 `https://` 开头，手机与设备需在同一局域网，并接受本次临时证书提示 |
 | 电源键/保护套无效 | 区分 `KEY_POWER`、`SW_LID`、`SW_MACHINE_COVER` 与应用层手势 |
 | 系统升级后 APP 消失 | `/usr/lib` 会被系统镜像替换，重新验证并安装兼容的 XOVI/AppLoad 和 drop-in |
 

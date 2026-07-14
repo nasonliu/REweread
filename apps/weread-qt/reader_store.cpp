@@ -7,11 +7,14 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
+#include <QRectF>
 #include <QRegularExpression>
+#include <QSet>
 #include <QTextDocumentFragment>
 #include <QUrl>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
 
@@ -29,6 +32,124 @@ QString htmlAttribute(const QString &tag, const QString &name) {
 QString compactAnnotationText(QString value) {
     value.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
     return value.trimmed();
+}
+
+struct InkBlockAccumulator {
+    QString id;
+    QRectF bounds;
+    qint64 lastAtMs = 0;
+    QVariantList strokes;
+    QVariantList sourceIndices;
+    QString ocrText;
+};
+
+qint64 strokeCreatedAtMs(const QVariantMap &stroke) {
+    const qint64 milliseconds = stroke.value(QStringLiteral("createdAtMs")).toLongLong();
+    if (milliseconds > 0) {
+        return milliseconds;
+    }
+    return stroke.value(QStringLiteral("createdAt")).toLongLong() * 1000;
+}
+
+QRectF freeStrokeBounds(const QVariantMap &stroke) {
+    const QVariantList points = stroke.value(QStringLiteral("points")).toList();
+    if (points.isEmpty()) {
+        return {};
+    }
+    const QVariantMap first = points.constFirst().toMap();
+    double minX = first.value(QStringLiteral("x")).toDouble();
+    double maxX = minX;
+    double minY = first.value(QStringLiteral("y")).toDouble();
+    double maxY = minY;
+    for (const QVariant &value : points) {
+        const QVariantMap point = value.toMap();
+        const double x = point.value(QStringLiteral("x")).toDouble();
+        const double y = point.value(QStringLiteral("y")).toDouble();
+        minX = qMin(minX, x);
+        maxX = qMax(maxX, x);
+        minY = qMin(minY, y);
+        maxY = qMax(maxY, y);
+    }
+    return QRectF(minX, minY, qMax(1.0, maxX - minX), qMax(1.0, maxY - minY));
+}
+
+bool strokeJoinsBlock(const QRectF &blockBounds, qint64 blockLastAtMs,
+                      const QRectF &strokeBounds, qint64 strokeAtMs) {
+    if (blockBounds.isEmpty() || strokeBounds.isEmpty()) {
+        return false;
+    }
+    if (blockLastAtMs > 0 && strokeAtMs > 0
+        && strokeAtMs - blockLastAtMs > 3200) {
+        return false;
+    }
+    const QRectF nearBlock = blockBounds.adjusted(-68, -48, 68, 48);
+    if (nearBlock.intersects(strokeBounds)) {
+        return true;
+    }
+    const double horizontalGap = qMax(0.0,
+        qMax(blockBounds.left(), strokeBounds.left())
+        - qMin(blockBounds.right(), strokeBounds.right()));
+    const double verticalGap = qMax(0.0,
+        qMax(blockBounds.top(), strokeBounds.top())
+        - qMin(blockBounds.bottom(), strokeBounds.bottom()));
+    return horizontalGap <= 82.0 && verticalGap <= 42.0;
+}
+
+QVariantList buildPageInkBlocks(const QVariantList &strokes, int pageIndex) {
+    QList<InkBlockAccumulator> blocks;
+    const int safePageIndex = qMax(0, pageIndex);
+    for (qsizetype sourceIndex = 0; sourceIndex < strokes.size(); ++sourceIndex) {
+        const QVariantMap stroke = strokes.at(sourceIndex).toMap();
+        if (stroke.value(QStringLiteral("pageIndex")).toInt() != safePageIndex
+            || stroke.value(QStringLiteral("tool")).toString() != QStringLiteral("free")) {
+            continue;
+        }
+        const QRectF bounds = freeStrokeBounds(stroke);
+        if (bounds.isEmpty()) {
+            continue;
+        }
+        const qint64 createdAtMs = strokeCreatedAtMs(stroke);
+        const QString storedGroupId = stroke.value(QStringLiteral("groupId")).toString();
+        bool joinCurrent = false;
+        if (!blocks.isEmpty()) {
+            const InkBlockAccumulator &current = blocks.constLast();
+            joinCurrent = !storedGroupId.isEmpty()
+                ? current.id == storedGroupId
+                : strokeJoinsBlock(current.bounds, current.lastAtMs, bounds, createdAtMs);
+        }
+        if (!joinCurrent) {
+            InkBlockAccumulator block;
+            block.id = storedGroupId.isEmpty()
+                ? QStringLiteral("legacy-%1-%2").arg(safePageIndex).arg(sourceIndex)
+                : storedGroupId;
+            blocks.append(block);
+        }
+        InkBlockAccumulator &block = blocks.last();
+        block.bounds = block.bounds.isEmpty() ? bounds : block.bounds.united(bounds);
+        block.lastAtMs = qMax(block.lastAtMs, createdAtMs);
+        block.strokes.append(stroke);
+        block.sourceIndices.append(sourceIndex);
+        if (block.ocrText.isEmpty()) {
+            block.ocrText = stroke.value(QStringLiteral("ocrText")).toString();
+        }
+    }
+
+    QVariantList result;
+    result.reserve(blocks.size());
+    for (const InkBlockAccumulator &block : std::as_const(blocks)) {
+        QVariantMap row;
+        row.insert(QStringLiteral("blockId"), block.id);
+        row.insert(QStringLiteral("x"), block.bounds.x());
+        row.insert(QStringLiteral("y"), block.bounds.y());
+        row.insert(QStringLiteral("width"), qMax(1.0, block.bounds.width()));
+        row.insert(QStringLiteral("height"), qMax(1.0, block.bounds.height()));
+        row.insert(QStringLiteral("lastAtMs"), block.lastAtMs);
+        row.insert(QStringLiteral("strokes"), block.strokes);
+        row.insert(QStringLiteral("sourceIndices"), block.sourceIndices);
+        row.insert(QStringLiteral("ocrText"), block.ocrText);
+        result.append(row);
+    }
+    return result;
 }
 
 }
@@ -76,6 +197,14 @@ QVariantList ReaderStore::pageStrokes() const {
     return m_pageStrokes;
 }
 
+QVariantList ReaderStore::pageInkBlocks() const {
+    return m_pageInkBlocks;
+}
+
+QVariantList ReaderStore::paragraphNotes() const {
+    return m_paragraphNotes;
+}
+
 QVariantList ReaderStore::searchResults() const {
     return m_searchResults;
 }
@@ -99,15 +228,19 @@ void ReaderStore::loadBook(const QString &bookId, const QString &title) {
     m_bookmarks.clear();
     m_highlights.clear();
     m_pageStrokes.clear();
+    m_pageInkBlocks.clear();
+    m_paragraphNotes.clear();
     m_bookmarkBookId.clear();
     m_highlightBookId.clear();
     m_strokesBookId.clear();
     m_strokesPageIndex = -1;
+    m_paragraphNotesBookId.clear();
     m_openingCache = false;
     clearSearch();
     emit bookmarksChanged();
     emit highlightsChanged();
     emit strokesChanged();
+    emit paragraphNotesChanged();
     emit contentChanged();
 
     const QString expandedDir = ensureExpandedEpub(bookId);
@@ -123,6 +256,7 @@ void ReaderStore::loadBook(const QString &bookId, const QString &title) {
     }
     loadBookmarksForBook(bookId);
     loadHighlightsForBook(bookId);
+    loadParagraphNotesForBook(bookId);
 
     QStringList parts;
     parts.reserve(chapters.size());
@@ -437,47 +571,118 @@ void ReaderStore::clearTextHighlightsInRange(const QString &bookId, int textStar
 }
 
 void ReaderStore::loadStrokesForPage(const QString &bookId, int pageIndex) {
-    m_strokesBookId = bookId;
-    m_strokesPageIndex = qMax(0, pageIndex);
-    m_pageStrokes.clear();
     if (bookId.isEmpty()) {
+        m_strokesBookId.clear();
+        m_strokesPageIndex = -1;
+        m_pageStrokes.clear();
+        m_pageInkBlocks.clear();
         emit strokesChanged();
         return;
     }
 
     const QVariantMap strokesMap = loadStrokesMap();
     const QVariantList list = strokesMap.value(safeName(bookId)).toList();
-    for (const QVariant &item : list) {
+    setStrokesForPage(bookId, pageIndex, list);
+}
+
+void ReaderStore::setStrokesForPage(const QString &bookId, int pageIndex, const QVariantList &strokes) {
+    m_strokesBookId = bookId;
+    m_strokesPageIndex = qMax(0, pageIndex);
+    m_pageStrokes.clear();
+    m_pageInkBlocks.clear();
+    for (const QVariant &item : strokes) {
         const QVariantMap row = item.toMap();
         if (row.value(QStringLiteral("pageIndex")).toInt() == m_strokesPageIndex) {
             m_pageStrokes.append(row);
         }
     }
+    m_pageInkBlocks = buildPageInkBlocks(strokes, m_strokesPageIndex);
     emit strokesChanged();
 }
 
 void ReaderStore::addPageStroke(const QString &bookId, const QString &title, int pageIndex, int pageCount, const QString &colorName, const QString &colorValue, const QVariantList &points, const QString &tool, int lineWidth) {
-    if (bookId.isEmpty() || colorValue.isEmpty() || points.size() < 2) {
+    QVariantMap stroke;
+    stroke.insert(QStringLiteral("colorName"), colorName);
+    stroke.insert(QStringLiteral("colorValue"), colorValue);
+    stroke.insert(QStringLiteral("points"), points);
+    stroke.insert(QStringLiteral("tool"), tool);
+    stroke.insert(QStringLiteral("lineWidth"), lineWidth);
+    QVariantList strokes;
+    strokes.append(stroke);
+    addPageStrokesBatch(bookId, title, pageIndex, pageCount, strokes);
+}
+
+void ReaderStore::addPageStrokesBatch(const QString &bookId, const QString &title, int pageIndex, int pageCount, const QVariantList &strokes) {
+    if (bookId.isEmpty() || strokes.isEmpty()) {
         return;
     }
 
+    const int safePageIndex = qMax(0, pageIndex);
     QVariantMap strokesMap = loadStrokesMap();
     QVariantList list = strokesMap.value(safeName(bookId)).toList();
-    QVariantMap row;
-    row.insert(QStringLiteral("bookId"), bookId);
-    row.insert(QStringLiteral("title"), title.isEmpty() ? bookId : title);
-    row.insert(QStringLiteral("pageIndex"), qMax(0, pageIndex));
-    row.insert(QStringLiteral("pageCount"), qMax(1, pageCount));
-    row.insert(QStringLiteral("colorName"), colorName.isEmpty() ? QStringLiteral("手写") : colorName);
-    row.insert(QStringLiteral("colorValue"), colorValue);
-    row.insert(QStringLiteral("tool"), tool.isEmpty() ? QStringLiteral("marker") : tool);
-    row.insert(QStringLiteral("lineWidth"), qBound(8, lineWidth, 72));
-    row.insert(QStringLiteral("points"), points);
-    row.insert(QStringLiteral("createdAt"), QDateTime::currentSecsSinceEpoch());
-    list.append(row);
+
+    QString currentGroupId;
+    QRectF currentBounds;
+    qint64 currentAtMs = 0;
+    const QVariantList existingBlocks = buildPageInkBlocks(list, safePageIndex);
+    if (!existingBlocks.isEmpty()) {
+        const QVariantMap previous = existingBlocks.constLast().toMap();
+        currentGroupId = previous.value(QStringLiteral("blockId")).toString();
+        currentBounds = QRectF(previous.value(QStringLiteral("x")).toDouble(),
+                               previous.value(QStringLiteral("y")).toDouble(),
+                               previous.value(QStringLiteral("width")).toDouble(),
+                               previous.value(QStringLiteral("height")).toDouble());
+        currentAtMs = previous.value(QStringLiteral("lastAtMs")).toLongLong();
+    }
+
+    const qint64 firstCreatedAtMs = QDateTime::currentMSecsSinceEpoch();
+    int acceptedCount = 0;
+    for (const QVariant &value : strokes) {
+        const QVariantMap request = value.toMap();
+        const QVariantList strokePoints = request.value(QStringLiteral("points")).toList();
+        const QString colorValue = request.value(QStringLiteral("colorValue")).toString();
+        if (strokePoints.size() < 2 || colorValue.isEmpty()) {
+            continue;
+        }
+
+        const qint64 createdAtMs = firstCreatedAtMs + acceptedCount;
+        const QString requestedTool = request.value(QStringLiteral("tool")).toString();
+        const QString rowTool = requestedTool.isEmpty() ? QStringLiteral("marker") : requestedTool;
+        QVariantMap row;
+        row.insert(QStringLiteral("bookId"), bookId);
+        row.insert(QStringLiteral("title"), title.isEmpty() ? bookId : title);
+        row.insert(QStringLiteral("pageIndex"), safePageIndex);
+        row.insert(QStringLiteral("pageCount"), qMax(1, pageCount));
+        row.insert(QStringLiteral("colorName"), request.value(QStringLiteral("colorName")).toString().isEmpty()
+            ? QStringLiteral("手写") : request.value(QStringLiteral("colorName")).toString());
+        row.insert(QStringLiteral("colorValue"), colorValue);
+        row.insert(QStringLiteral("tool"), rowTool);
+        row.insert(QStringLiteral("lineWidth"), qBound(2, request.value(QStringLiteral("lineWidth")).toInt(), 72));
+        row.insert(QStringLiteral("points"), strokePoints);
+        const QString clientStrokeId = request.value(QStringLiteral("clientStrokeId")).toString();
+        if (!clientStrokeId.isEmpty()) {
+            row.insert(QStringLiteral("clientStrokeId"), clientStrokeId);
+        }
+        row.insert(QStringLiteral("createdAt"), createdAtMs / 1000);
+        row.insert(QStringLiteral("createdAtMs"), createdAtMs);
+        if (rowTool == QStringLiteral("free")) {
+            const QRectF bounds = freeStrokeBounds(row);
+            if (!strokeJoinsBlock(currentBounds, currentAtMs, bounds, createdAtMs)) {
+                currentGroupId = QStringLiteral("ink-%1-%2").arg(createdAtMs).arg(list.size());
+            }
+            row.insert(QStringLiteral("groupId"), currentGroupId);
+            currentBounds = currentBounds.isEmpty() ? bounds : currentBounds.united(bounds);
+            currentAtMs = createdAtMs;
+        }
+        list.append(row);
+        ++acceptedCount;
+    }
+    if (acceptedCount == 0) {
+        return;
+    }
     strokesMap.insert(safeName(bookId), list);
     saveStrokesMap(strokesMap);
-    loadStrokesForPage(bookId, pageIndex);
+    setStrokesForPage(bookId, safePageIndex, list);
 }
 
 void ReaderStore::clearPageStrokes(const QString &bookId, int pageIndex) {
@@ -497,6 +702,149 @@ void ReaderStore::clearPageStrokes(const QString &bookId, int pageIndex) {
     strokesMap.insert(safeName(bookId), kept);
     saveStrokesMap(strokesMap);
     loadStrokesForPage(bookId, pageIndex);
+}
+
+void ReaderStore::removePageInkBlock(const QString &bookId, int pageIndex, const QString &blockId) {
+    if (bookId.isEmpty() || blockId.isEmpty()) {
+        return;
+    }
+    QVariantMap strokesMap = loadStrokesMap();
+    const QVariantList list = strokesMap.value(safeName(bookId)).toList();
+    const int safePageIndex = qMax(0, pageIndex);
+    QSet<qsizetype> removedIndices;
+    const QVariantList blocks = buildPageInkBlocks(list, safePageIndex);
+    for (const QVariant &value : blocks) {
+        const QVariantMap block = value.toMap();
+        if (block.value(QStringLiteral("blockId")).toString() != blockId) {
+            continue;
+        }
+        for (const QVariant &sourceIndex : block.value(QStringLiteral("sourceIndices")).toList()) {
+            removedIndices.insert(sourceIndex.toLongLong());
+        }
+        break;
+    }
+    if (removedIndices.isEmpty()) {
+        return;
+    }
+    QVariantList kept;
+    kept.reserve(list.size() - removedIndices.size());
+    for (qsizetype index = 0; index < list.size(); ++index) {
+        if (!removedIndices.contains(index)) {
+            kept.append(list.at(index));
+        }
+    }
+    strokesMap.insert(safeName(bookId), kept);
+    saveStrokesMap(strokesMap);
+    loadStrokesForPage(bookId, safePageIndex);
+}
+
+void ReaderStore::setPageInkBlockOcrText(const QString &bookId, int pageIndex, const QString &blockId, const QString &text) {
+    const QString cleanText = text.trimmed();
+    if (bookId.isEmpty() || blockId.isEmpty() || cleanText.isEmpty()) {
+        return;
+    }
+
+    QVariantMap strokesMap = loadStrokesMap();
+    QVariantList list = strokesMap.value(safeName(bookId)).toList();
+    const int safePageIndex = qMax(0, pageIndex);
+    QVariantList sourceIndices;
+    const QVariantList blocks = buildPageInkBlocks(list, safePageIndex);
+    for (const QVariant &value : blocks) {
+        const QVariantMap block = value.toMap();
+        if (block.value(QStringLiteral("blockId")).toString() == blockId) {
+            sourceIndices = block.value(QStringLiteral("sourceIndices")).toList();
+            break;
+        }
+    }
+    if (sourceIndices.isEmpty()) {
+        return;
+    }
+    bool attached = false;
+    for (const QVariant &sourceIndexValue : sourceIndices) {
+        const qsizetype index = sourceIndexValue.toLongLong();
+        if (index < 0 || index >= list.size()) {
+            continue;
+        }
+        QVariantMap row = list.at(index).toMap();
+        row.remove(QStringLiteral("ocrText"));
+        if (!attached) {
+            row.insert(QStringLiteral("ocrText"), cleanText);
+            attached = true;
+        }
+        list[index] = row;
+    }
+    if (!attached) {
+        return;
+    }
+    strokesMap.insert(safeName(bookId), list);
+    saveStrokesMap(strokesMap);
+    loadStrokesForPage(bookId, safePageIndex);
+}
+
+void ReaderStore::addParagraphNote(const QString &bookId, const QString &title, const QVariantMap &anchor, const QVariantMap &fallback, const QVariantList &points, const QString &colorName, const QString &colorValue) {
+    if (bookId.isEmpty() || colorValue.isEmpty() || points.isEmpty()) {
+        return;
+    }
+    QVariantMap notesMap = loadParagraphNotesMap();
+    QVariantList list = notesMap.value(safeName(bookId)).toList();
+    QVariantMap row;
+    row.insert(QStringLiteral("noteId"), QStringLiteral("%1-%2").arg(QDateTime::currentMSecsSinceEpoch()).arg(list.size()));
+    row.insert(QStringLiteral("bookId"), bookId);
+    row.insert(QStringLiteral("title"), title.isEmpty() ? bookId : title);
+    row.insert(QStringLiteral("kind"), QStringLiteral("free-ink"));
+    row.insert(QStringLiteral("anchor"), anchor);
+    row.insert(QStringLiteral("fallback"), fallback);
+    row.insert(QStringLiteral("strokes"), points);
+    row.insert(QStringLiteral("colorName"), colorName.isEmpty() ? QStringLiteral("手写") : colorName);
+    row.insert(QStringLiteral("colorValue"), colorValue);
+    row.insert(QStringLiteral("createdAt"), QDateTime::currentSecsSinceEpoch());
+    list.append(row);
+    notesMap.insert(safeName(bookId), list);
+    saveParagraphNotesMap(notesMap);
+    loadParagraphNotesForBook(bookId);
+}
+
+void ReaderStore::removeParagraphNote(const QString &bookId, const QString &noteId) {
+    if (bookId.isEmpty() || noteId.isEmpty()) {
+        return;
+    }
+    QVariantMap notesMap = loadParagraphNotesMap();
+    const QVariantList list = notesMap.value(safeName(bookId)).toList();
+    QVariantList kept;
+    for (const QVariant &item : list) {
+        if (item.toMap().value(QStringLiteral("noteId")).toString() != noteId) {
+            kept.append(item);
+        }
+    }
+    notesMap.insert(safeName(bookId), kept);
+    saveParagraphNotesMap(notesMap);
+    loadParagraphNotesForBook(bookId);
+}
+
+void ReaderStore::setParagraphNoteOcrText(const QString &bookId, const QString &noteId, const QString &text) {
+    if (bookId.isEmpty() || noteId.isEmpty() || text.trimmed().isEmpty()) {
+        return;
+    }
+    QVariantMap notesMap = loadParagraphNotesMap();
+    QVariantList list = notesMap.value(safeName(bookId)).toList();
+    bool changed = false;
+    for (QVariant &item : list) {
+        QVariantMap row = item.toMap();
+        if (row.value(QStringLiteral("noteId")).toString() != noteId) {
+            continue;
+        }
+        row.insert(QStringLiteral("ocrText"), text.trimmed());
+        row.insert(QStringLiteral("ocrUpdatedAt"), QDateTime::currentSecsSinceEpoch());
+        item = row;
+        changed = true;
+        break;
+    }
+    if (!changed) {
+        return;
+    }
+    notesMap.insert(safeName(bookId), list);
+    saveParagraphNotesMap(notesMap);
+    loadParagraphNotesForBook(bookId);
 }
 
 int ReaderStore::savedPage(const QString &bookId) const {
@@ -584,6 +932,10 @@ QString ReaderStore::strokesFilePath() const {
     return QDir(dataDir()).filePath(QStringLiteral("reader-strokes.json"));
 }
 
+QString ReaderStore::paragraphNotesFilePath() const {
+    return QDir(dataDir()).filePath(QStringLiteral("reader-paragraph-notes.json"));
+}
+
 QVariantMap ReaderStore::loadProgressMap() const {
     QFile file(progressFilePath());
     if (!file.open(QIODevice::ReadOnly)) {
@@ -652,6 +1004,15 @@ QVariantMap ReaderStore::loadStrokesMap() const {
     return document.object().toVariantMap();
 }
 
+QVariantMap ReaderStore::loadParagraphNotesMap() const {
+    QFile file(paragraphNotesFilePath());
+    if (!file.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+    return document.isObject() ? document.object().toVariantMap() : QVariantMap();
+}
+
 void ReaderStore::saveBookmarksMap(const QVariantMap &bookmarks) const {
     QDir().mkpath(dataDir());
     QFile file(bookmarksFilePath());
@@ -679,6 +1040,15 @@ void ReaderStore::saveStrokesMap(const QVariantMap &strokes) const {
     file.write(QJsonDocument(QJsonObject::fromVariantMap(strokes)).toJson(QJsonDocument::Compact));
 }
 
+void ReaderStore::saveParagraphNotesMap(const QVariantMap &notes) const {
+    QDir().mkpath(dataDir());
+    QFile file(paragraphNotesFilePath());
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return;
+    }
+    file.write(QJsonDocument(QJsonObject::fromVariantMap(notes)).toJson(QJsonDocument::Compact));
+}
+
 void ReaderStore::loadBookmarksForBook(const QString &bookId) {
     m_bookmarkBookId = bookId;
     QVariantList list = loadBookmarksMap().value(safeName(bookId)).toList();
@@ -700,6 +1070,19 @@ void ReaderStore::loadHighlightsForBook(const QString &bookId) {
         m_highlights.append(item);
     }
     emit highlightsChanged();
+}
+
+void ReaderStore::loadParagraphNotesForBook(const QString &bookId) {
+    m_paragraphNotesBookId = bookId;
+    QVariantList list = loadParagraphNotesMap().value(safeName(bookId)).toList();
+    std::sort(list.begin(), list.end(), [](const QVariant &a, const QVariant &b) {
+        const QVariantMap leftAnchor = a.toMap().value(QStringLiteral("anchor")).toMap();
+        const QVariantMap rightAnchor = b.toMap().value(QStringLiteral("anchor")).toMap();
+        return leftAnchor.value(QStringLiteral("textStart")).toInt()
+            < rightAnchor.value(QStringLiteral("textStart")).toInt();
+    });
+    m_paragraphNotes = list;
+    emit paragraphNotesChanged();
 }
 
 QString ReaderStore::findReadableEpub(const QString &bookId) const {
@@ -928,10 +1311,18 @@ void ReaderStore::setError(const QString &title, const QString &message) {
     m_footnotes.clear();
     m_bookmarks.clear();
     m_highlights.clear();
+    m_pageStrokes.clear();
+    m_pageInkBlocks.clear();
+    m_paragraphNotes.clear();
     m_bookmarkBookId.clear();
     m_highlightBookId.clear();
+    m_strokesBookId.clear();
+    m_strokesPageIndex = -1;
+    m_paragraphNotesBookId.clear();
     m_status = QStringLiteral("error");
     emit bookmarksChanged();
     emit highlightsChanged();
+    emit strokesChanged();
+    emit paragraphNotesChanged();
     emit contentChanged();
 }

@@ -15,7 +15,7 @@ function assert(condition, message) {
 
 const cmake = read('apps/weread-qt/CMakeLists.txt');
 assert(cmake.includes('project(rm_weread_qt'), 'Qt app project must be rm_weread_qt');
-assert(cmake.includes('find_package(Qt6 REQUIRED COMPONENTS Quick)'), 'Qt app must use Qt Quick');
+assert(cmake.includes('find_package(Qt6 REQUIRED COMPONENTS Quick Network)'), 'Qt app must use Qt Quick and Qt Network');
 assert(cmake.includes('qt_add_executable(rm_weread_qt'), 'Qt app must build rm_weread_qt');
 assert(cmake.includes('shelf_store.cpp'), 'Qt app must compile the shelf data bridge');
 assert(cmake.includes('reader_store.cpp'), 'Qt app must compile the reader data bridge');
@@ -23,6 +23,7 @@ assert(cmake.includes('download_store.cpp'), 'Qt app must compile the download d
 assert(cmake.includes('discover_store.cpp'), 'Qt app must compile the discover/search data bridge');
 assert(cmake.includes('progress_sync_store.cpp'), 'Qt app must compile the WeRead progress sync bridge');
 assert(cmake.includes('notes_store.cpp'), 'Qt app must compile the WeRead notes data bridge');
+assert(cmake.includes('ocr_store.cpp') && cmake.includes('ocr_setup_server.cpp'), 'Qt app must compile the cloud OCR bridge and explicit setup server');
 assert(cmake.includes('account_store.cpp'), 'Qt app must compile the account status bridge');
 assert(cmake.includes('qr_image_provider.cpp'), 'Qt app must compile the local QR image provider');
 assert(cmake.includes('QRCODEGEN_SOURCE_DIR') && !cmake.includes('third_party/qrcodegen'), 'Qt app must consume the QR encoder from an external source directory');
@@ -31,6 +32,12 @@ assert(cmake.includes('network_store.cpp'), 'Qt app must compile the network sta
 assert(cmake.includes('book_catalog_store.cpp'), 'Qt app must compile the book catalog bridge');
 assert(cmake.includes('app_control.cpp'), 'Qt app must compile app control');
 assert(cmake.includes('URI WeReadMove'), 'QML module URI must be WeReadMove');
+assert(cmake.includes('ink_canvas_item.cpp') && cmake.includes('ink_canvas_item.h'), 'Qt app must compile the native incremental ink canvas');
+
+const inkCanvasHeader = read('apps/weread-qt/ink_canvas_item.h');
+const inkCanvasCpp = read('apps/weread-qt/ink_canvas_item.cpp');
+assert(inkCanvasHeader.includes('QML_NAMED_ELEMENT(InkCanvas)'), 'native ink canvas must be available to the QML reader');
+assert(inkCanvasHeader.includes('finishStroke') && inkCanvasCpp.includes('scheduleSettledRefresh'), 'native ink canvas must separate live pen ink from delayed settled refresh');
 
 const main = read('apps/weread-qt/main.cpp');
 assert(main.includes('QGuiApplication'), 'main.cpp must use QGuiApplication');
@@ -39,6 +46,7 @@ assert(main.includes('ReaderStore readerStore'), 'main.cpp must create ReaderSto
 assert(main.includes('DownloadStore downloadStore'), 'main.cpp must create DownloadStore');
 assert(main.includes('DiscoverStore discoverStore'), 'main.cpp must create DiscoverStore');
 assert(main.includes('NotesStore notesStore'), 'main.cpp must create NotesStore');
+assert(main.includes('OcrStore ocrStore') && main.includes('OcrSetupServer ocrSetupServer'), 'main.cpp must create the cloud OCR stores');
 assert(main.includes('ProgressSyncStore progressSyncStore'), 'main.cpp must create ProgressSyncStore');
 assert(main.includes('FrontlightStore frontlightStore'), 'main.cpp must create FrontlightStore');
 assert(main.includes('NetworkStore networkStore'), 'main.cpp must create NetworkStore');
@@ -884,8 +892,9 @@ assert(qml.includes('function richReaderText(value, globalStart)'), 'reader rich
 assert(qml.includes('background-color:'), 'reader text-attached highlights must render as inline background spans');
 assert(qml.includes('id: readerInkGestureArea'), 'reader must expose handwrite annotation through a hidden gesture area');
 assert(qml.includes('id: readerInkLayer'), 'reader must include a handwrite annotation capture layer');
-assert(qml.includes('model: readerStore.pageStrokes'), 'reader must render persisted page handwrite strokes');
-assert(qml.includes('Canvas') && qml.includes('ctx.lineWidth = stroke.lineWidth || root.readerMarkerLineWidth'), 'reader must render marker strokes as continuous wide lines');
+assert(qml.includes('InkCanvas {') && qml.includes('strokes: root.readerVisibleInkStrokes()'), 'reader must render persisted and not-yet-flushed page handwriting through the native ink canvas');
+assert(qml.includes('model: readerStore.pageInkBlocks') && qml.includes('recognizeReaderInkBlock'), 'reader must offer OCR on one selected ink block instead of the whole page');
+assert(qml.includes('readerInkCanvas.beginStroke') && qml.includes('readerInkCanvas.appendPoint'), 'reader must draw live marker strokes incrementally');
 assert(qml.includes('readerStylusToolBar'), 'reader must expose marker color selection through the pen-only side toolbar');
 assert(qml.includes('selectReaderStylusTool'), 'reader stylus toolbar must update the active marker color');
 const saveCurrentMarkerSelectionSnippet = qml.slice(qml.indexOf('function saveCurrentMarkerSelection'), qml.indexOf('function currentReaderProgressPercent'));
@@ -912,6 +921,8 @@ assert(qml.includes('进度 " + Math.round(root.currentReaderProgressPercent()) 
 const readerPageSnippet = qml.slice(qml.indexOf('id: readerPage'), qml.indexOf('id: readerSettingsPanel'));
 const readerBodyTextSnippet = qml.slice(qml.indexOf('id: readerBodyText'), qml.indexOf('id: readerFootnotePanel'));
 assert(!readerBodyTextSnippet.includes('elide: Text.ElideRight'), 'reader body must not silently elide overflowing book text');
+assert(readerBodyTextSnippet.includes('clip: true'), 'reader body paint must be clipped above the footer even if rich-text metrics are imperfect');
+assert(qml.includes('function readerChapterEndDecorationHeight') && qml.includes('paragraphDecorationHeight'), 'pagination must reserve chapter-end divider and comment-link height before the footer');
 assert(!readerPageSnippet.includes('id: readerSettingsButton'), 'reader page must not show a visible settings button in immersive reading mode');
 assert(!readerPageSnippet.includes('id: readerBookmarkToggle'), 'reader page must not show a visible bookmark button in immersive reading mode');
 assert(!readerPageSnippet.includes('id: readerInkToggle'), 'reader page must not show a visible pen button in immersive reading mode');
@@ -1150,7 +1161,10 @@ assert(appLoadScript.includes('微信读书'), 'AppLoad entry should show a Chin
 assert(appLoadScript.includes('"qtfb": true'), 'AppLoad entry should use qtfb=true so AppLoad lists it reliably');
 assert(appLoadScript.includes('/home/root/xovi/exthome/appload/weread-move'), 'AppLoad installer must replace the single existing WeRead icon');
 assert(appLoadScript.includes('rm -rf /home/root/xovi/exthome/appload/weread-qt'), 'AppLoad installer must remove the temporary duplicate icon');
-assert(appLoadScript.includes('mv "$APPLOAD_DIR" "$APPLOAD_BACKUP"') && appLoadScript.includes('mkdir -p "$APPLOAD_DIR"'), 'AppLoad installer must recreate the launcher directory while retaining rollback');
+assert(appLoadScript.includes('APPLOAD_BACKUP=')
+  && appLoadScript.includes('mv "$APPLOAD_DIR" "$APPLOAD_BACKUP"')
+  && appLoadScript.includes('mkdir -p "$APPLOAD_DIR"'),
+  'AppLoad installer must atomically replace the launcher directory while retaining rollback');
 assert(appLoadScript.includes('/home/root/xovi/start'), 'AppLoad installer must refresh through XOVI so AppLoad hooks load');
 assert(!appLoadScript.includes('systemctl enable xovi-appload.service'), 'AppLoad installer must not pretend volatile /etc systemd enablement survives reboot');
 assert(!appLoadScript.includes('systemctl link /home/root/xovi/xovi-appload.service'), 'AppLoad installer must not rely on volatile /etc systemd links for persistence');

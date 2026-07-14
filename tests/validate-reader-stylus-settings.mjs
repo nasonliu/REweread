@@ -76,7 +76,7 @@ assert(qml.includes('readerTextOffsetForVisibleText'), 'reader must map visible 
 assert(qml.includes('beginStylusStroke') && qml.includes('appendStylusStroke') && qml.includes('endStylusStroke'), 'reader must route marker drawing through stylus helpers');
 assert(qml.includes('target: stylusStore'), 'reader must listen to StylusStore signals');
 assert(qml.includes('onStylusPressed') && qml.includes('onStylusMoved') && qml.includes('onStylusReleased'), 'reader must handle stylus press/move/release in QML');
-assert(qml.includes('value: root.screenName === "reader"'), 'raw marker listener must be active on the reader screen so pen can select toolbar colors');
+assert(qml.includes('root.screenName === "reader"') && qml.includes('|| root.showSoftKeyboard)'), 'raw stylus listener must cover both reader annotation and the full keyboard session');
 assert(qml.includes('eraseCurrentMarkerSelection'), 'eraser strokes must clear text-attached highlights');
 assert(!qml.includes('enabled: root.annotationMode\n            preventStealing: true\n            onPressed: function(mouse)'), 'reader must not use touch MouseArea as the marker input source');
 assert(!qml.includes('id: readerMarkerColorPicker'), 'reader must not put marker color selection inside the catalog/settings menu');

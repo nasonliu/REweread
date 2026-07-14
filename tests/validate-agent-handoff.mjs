@@ -14,7 +14,7 @@ const readme = read('README.md');
 const docs = read('docs/README.md');
 
 for (const required of [
-  '1.0.0-rc.1',
+  '1.5.0',
   'source-only',
   'VPDD',
   'systemctl suspend',
@@ -28,6 +28,8 @@ for (const required of [
   'BusyBox',
   'weread.koplugin',
   '/home/root/.local/share/rm-weread/',
+  'clientStrokeId',
+  'baidu-ocr-configuration-flow.md',
 ]) {
   assert(handoff.includes(required), `handoff must preserve the ${required} operational lesson`);
 }

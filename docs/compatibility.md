@@ -1,6 +1,10 @@
 # Compatibility matrix
 
-REweread 1.0.0-rc.1 is validated only on the following baseline.
+REweread 1.5.0 retains the 1.0.0-rc.1 hardware/runtime baseline below. The
+1.5 handwriting iterations were launched on the same Paper Pro Move class of
+device, but the clean-device installation and full long-duration regression
+matrix have not been repeated; do not widen the supported matrix from this
+document.
 
 | Component | Tested baseline | Status |
 | --- | --- | --- |
@@ -27,3 +31,15 @@ Other reMarkable models, resolutions and operating-system versions are unsupport
 - Magnetic-folio event detection and wake routing.
 
 Clean-device install/uninstall and long-duration battery measurements remain release-candidate work. This is one reason the release is not marked stable.
+
+## 1.5.0 incremental device evidence
+
+- Pinyin and handwriting keyboard displayed with explicit candidate paging.
+- Direct ink initialized successfully on the Move framebuffer.
+- Reader free handwriting, block-level OCR flow and inline OCR result handling
+  were deployed during iterative testing.
+- The final persistence fix passed launch checks with no QML runtime,
+  framebuffer-lock or input-overrun errors.
+
+The user's continuous-writing acceptance check remains the decisive validation
+for pen latency; static tests and process health do not prove stroke continuity.
