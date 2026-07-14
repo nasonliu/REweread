@@ -39,6 +39,11 @@ Window {
     property int readerFooterGap: root.readerLinePixels()
     property int readerFooterTop: root.height - root.readerBottomGestureHeight - root.readerFooterHeight
     property int readerContentBottom: root.readerFooterTop - root.readerFooterGap
+    // The page break is line-snapped, while the visible rich-text viewport
+    // keeps every remaining safe pixel above the footer. Qt's text document
+    // may need a few extra raster rows for a glyph's descent even when its
+    // logical line height is an exact multiple.
+    property int readerTextBottomGuard: 2
     property int readerCatalogPanelWidth: Math.round(root.width * 0.56)
     property int readerTextTopMargin: 96
     property int readerImageTopMargin: 72
@@ -162,7 +167,15 @@ Window {
             ? zenHeiFont.name
             : readerFontChoice === "霞鹜文楷" && lxgwWenKaiFont.status === FontLoader.Ready
                 ? lxgwWenKaiFont.name
-                : ""
+                : readerFontChoice === "思源黑体" && sourceHanSansFont.status === FontLoader.Ready
+                    ? sourceHanSansFont.name
+                    : readerFontChoice === "思源宋体" && sourceHanSerifFont.status === FontLoader.Ready
+                        ? sourceHanSerifFont.name
+                        : readerFontChoice === "寒蝉正楷" && chillKaiFont.status === FontLoader.Ready
+                            ? chillKaiFont.name
+                            : readerFontChoice === "寒蝉活宋" && chillHuoSongFont.status === FontLoader.Ready
+                                ? chillHuoSongFont.name
+                                : ""
     property var readerPageStarts: [0]
     property var readerPageImages: [""]
     property var readerChapterPageLabels: ({})
@@ -207,6 +220,8 @@ Window {
     property bool readerImageLoadFailed: false
     property var readerLayoutSelfTestPages: []
     property int readerLayoutSelfTestCursor: 0
+    property var readerLayoutSelfTestCases: []
+    property int readerLayoutSelfTestCaseCursor: 0
     property var readerSelfTestSavedSettings: ({})
     property bool sleepOverlayVisible: false
     property string sleepCoverSource: ""
@@ -223,6 +238,7 @@ Window {
     onReaderParagraphSpacingChanged: root.markReaderPaginationDirty()
     onReaderFirstLineIndentCharsChanged: root.markReaderPaginationDirty()
     onReaderMarginChanged: root.markReaderPaginationDirty()
+    onReaderFontFamilyChanged: root.markReaderPaginationDirty()
     onWidthChanged: root.markReaderPaginationDirty()
     onHeightChanged: root.markReaderPaginationDirty()
 
@@ -267,6 +283,26 @@ Window {
     FontLoader {
         id: lxgwWenKaiFont
         source: "file:///home/root/weread-qt/fonts/lxgw-wenkai.ttf"
+    }
+
+    FontLoader {
+        id: sourceHanSansFont
+        source: "file:///home/root/weread-qt/fonts/source-han-sans-sc.otf"
+    }
+
+    FontLoader {
+        id: sourceHanSerifFont
+        source: "file:///home/root/weread-qt/fonts/source-han-serif-sc.otf"
+    }
+
+    FontLoader {
+        id: chillKaiFont
+        source: "file:///home/root/weread-qt/fonts/chill-kai.ttf"
+    }
+
+    FontLoader {
+        id: chillHuoSongFont
+        source: "file:///home/root/weread-qt/fonts/chill-huosong.otf"
     }
 
     function htmlEscape(value) {
@@ -992,7 +1028,7 @@ Window {
         }
     }
 
-    function formatReaderText(value, textStart, textEnd) {
+    function formatReaderText(value, textStart, textEnd, imageSource, imageCaption) {
         var source = String(value || "")
         var paragraphs = source.split(/\n+/)
         var out = []
@@ -1000,7 +1036,9 @@ Window {
         var chapterStart = root.isReaderChapterStart(textStart)
         var sourceCursor = 0
         var bodyLineHeight = Math.max(1, root.readerLinePixels())
-        var imageCaptionPrefix = root.currentReaderImageSource !== "" ? String(root.currentReaderImageCaption || "").replace(/\s+/g, " ").trim() : ""
+        var pageImageSource = imageSource === undefined ? root.currentReaderImageSource : String(imageSource || "")
+        var pageImageCaption = imageCaption === undefined ? root.currentReaderImageCaption : String(imageCaption || "")
+        var imageCaptionPrefix = pageImageSource !== "" ? pageImageCaption.replace(/\s+/g, " ").trim() : ""
         var bodySourceStart = imageCaptionPrefix === "" ? 0 : -1
         for (var i = 0; i < paragraphs.length; i++) {
             var rawPara = paragraphs[i]
@@ -1154,6 +1192,10 @@ Window {
         return Math.max(linePx * 2, Math.floor(usable / linePx) * linePx)
     }
 
+    function readerTextViewportHeight(topY) {
+        return Math.max(1, root.readerContentBottom - topY)
+    }
+
     function readerImagePageCount() {
         return 0
     }
@@ -1211,7 +1253,7 @@ Window {
         var textEnd = root.readerNextPageOffset(start, root.readerTextTopMargin)
         var image = root.readerImageForPageRange(start, textEnd)
         var topY = root.readerImageEntrySource(image) !== "" ? root.readerImageTextTopY : root.readerTextTopMargin
-        return Math.max(1, root.readerNextPageOffset(start, topY) - start)
+        return Math.max(1, root.readerNextPageOffset(start, topY, image) - start)
     }
 
     function readerPaginationBuildSignature() {
@@ -1297,7 +1339,7 @@ Window {
             var image = root.readerImageForPageRange(offset, textOnlyEnd)
             var imageSource = root.readerImageEntrySource(image)
             if (imageSource !== "") {
-                var imageEnd = root.readerNextPageOffset(offset, root.readerImageTextTopY)
+                var imageEnd = root.readerNextPageOffset(offset, root.readerImageTextTopY, image)
                 var imageStart = root.readerImageEntryTextStart(image)
                 if (imageStart >= imageEnd) {
                     image = ({})
@@ -1307,7 +1349,7 @@ Window {
             starts.push(offset)
             images.push(image)
             var topY = imageSource !== "" ? root.readerImageTextTopY : root.readerTextTopMargin
-            offset = root.readerNextPageOffset(offset, topY)
+            offset = root.readerNextPageOffset(offset, topY, image)
             guard += 1
         }
         if (starts.length === 0) {
@@ -1875,15 +1917,70 @@ Window {
         return root.readerCleanPageEnd(body, safeStart, safeEnd)
     }
 
-    function readerNextPageOffset(start, topY) {
+    function readerFormattedRangeText(start, end, image) {
+        var text = String(readerStore.bodyText || "")
+        var caption = root.readerImageEntryCaption(image)
+        var body = text.slice(start, end).trim()
+        return caption !== "" ? caption + "\n\n" + body : body
+    }
+
+    function readerMeasuredPageHeight(start, end, image) {
+        if (!readerPageMeasure) {
+            return 0
+        }
+        readerPageMeasure.width = root.readerTextWidth()
+        readerPageMeasure.text = root.formatReaderText(
+                    root.readerFormattedRangeText(start, end, image),
+                    start,
+                    end,
+                    root.readerImageEntrySource(image),
+                    root.readerImageEntryCaption(image))
+        return Math.ceil(readerPageMeasure.paintedHeight)
+    }
+
+    function readerMeasuredPageFits(start, end, topY, image) {
+        var safeHeight = Math.max(1, root.readerTextViewportHeight(topY) - root.readerTextBottomGuard)
+        return root.readerMeasuredPageHeight(start, end, image) <= safeHeight
+    }
+
+    function readerMeasuredPageEnd(start, candidateEnd, topY, image) {
+        var text = String(readerStore.bodyText || "")
+        var safeStart = root.clamp(Math.floor(Number(start) || 0), 0, text.length)
+        var safeEnd = root.clamp(Math.floor(Number(candidateEnd) || 0), safeStart + 1, text.length)
+        if (root.readerMeasuredPageFits(safeStart, safeEnd, topY, image)) {
+            return safeEnd
+        }
+        var low = safeStart + 1
+        var high = safeEnd - 1
+        var best = safeStart + 1
+        var guard = 0
+        while (low <= high && guard < 20) {
+            guard += 1
+            var mid = Math.floor((low + high) / 2)
+            var measuredEnd = Math.max(safeStart + 1, root.readerCleanPageEnd(text, safeStart, mid))
+            if (root.readerMeasuredPageFits(safeStart, measuredEnd, topY, image)) {
+                best = measuredEnd
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        best = root.readerPreferredPageEnd(text, safeStart, best)
+        while (best > safeStart + 1 && !root.readerMeasuredPageFits(safeStart, best, topY, image)) {
+            best = root.readerCleanPageEnd(text, safeStart, best - 1)
+        }
+        return Math.max(safeStart + 1, best)
+    }
+
+    function readerNextPageOffset(start, topY, image) {
         var text = String(readerStore.bodyText || "")
         var safeStart = Math.max(0, Math.floor(Number(start) || 0))
         var rawEnd = root.readerEstimatedPageEnd(safeStart, topY)
         var chapterBreak = root.nextReaderChapterStartAfter(safeStart)
-        if (chapterBreak > safeStart && chapterBreak <= rawEnd) {
-            return chapterBreak
-        }
-        return root.readerPreferredPageEnd(text, safeStart, rawEnd)
+        var candidateEnd = chapterBreak > safeStart && chapterBreak <= rawEnd
+            ? chapterBreak
+            : root.readerPreferredPageEnd(text, safeStart, rawEnd)
+        return root.readerMeasuredPageEnd(safeStart, candidateEnd, topY, image || ({}))
     }
 
     function buildReaderPaginationWindowFromOffset(offset, pageCount) {
@@ -1897,7 +1994,7 @@ Window {
             var image = root.readerImageForPageRange(start, textOnlyEnd)
             var imageSource = root.readerImageEntrySource(image)
             if (imageSource !== "") {
-                var imageEnd = root.readerNextPageOffset(start, root.readerImageTextTopY)
+                var imageEnd = root.readerNextPageOffset(start, root.readerImageTextTopY, image)
                 var imageStart = root.readerImageEntryTextStart(image)
                 if (imageStart >= imageEnd) {
                     image = ({})
@@ -1907,7 +2004,7 @@ Window {
             starts.push(start)
             images.push(image)
             var topY = imageSource !== "" ? root.readerImageTextTopY : root.readerTextTopMargin
-            var next = root.readerNextPageOffset(start, topY)
+            var next = root.readerNextPageOffset(start, topY, image)
             if (next <= start) {
                 break
             }
@@ -1946,7 +2043,7 @@ Window {
         var lastTopY = root.readerImageEntrySource(lastImage) !== ""
             ? root.readerImageTextTopY
             : root.readerTextTopMargin
-        var cursor = root.readerNextPageOffset(starts[lastIndex], lastTopY)
+        var cursor = root.readerNextPageOffset(starts[lastIndex], lastTopY, lastImage)
         var added = 0
         var target = Math.max(1, Math.floor(Number(additionalPages) || 0))
         while (cursor < text.length && added < target) {
@@ -1954,7 +2051,7 @@ Window {
             var image = root.readerImageForPageRange(cursor, textOnlyEnd)
             var imageSource = root.readerImageEntrySource(image)
             if (imageSource !== "") {
-                var imageEnd = root.readerNextPageOffset(cursor, root.readerImageTextTopY)
+                var imageEnd = root.readerNextPageOffset(cursor, root.readerImageTextTopY, image)
                 if (root.readerImageEntryTextStart(image) >= imageEnd) {
                     image = ({})
                     imageSource = ""
@@ -1963,7 +2060,7 @@ Window {
             starts.push(cursor)
             images.push(image)
             var topY = imageSource !== "" ? root.readerImageTextTopY : root.readerTextTopMargin
-            var next = root.readerNextPageOffset(cursor, topY)
+            var next = root.readerNextPageOffset(cursor, topY, image)
             if (next <= cursor) {
                 break
             }
@@ -2028,9 +2125,10 @@ Window {
         var safePage = root.clamp(root.pageIndex, 0, pageCount - 1)
         var start = root.readerPageStartOffset(safePage)
         var nextStart = root.readerPageStarts[safePage + 1] || 0
+        var image = root.readerPageImages[safePage] || ({})
         var end = nextStart > start
             ? nextStart
-            : root.readerNextPageOffset(start, topY)
+            : root.readerNextPageOffset(start, topY, image)
         return text.slice(start, end).trim()
     }
 
@@ -2050,7 +2148,7 @@ Window {
         var nextStart = root.readerPageStarts[root.pageIndex + 1] || 0
         var end = nextStart > start
             ? nextStart
-            : root.readerNextPageOffset(start, topY)
+            : root.readerNextPageOffset(start, topY, image)
         root.currentReaderImageSource = imageSource
         root.currentReaderImageCaption = root.readerImageEntryCaption(image)
         root.currentReaderTextTopY = topY
@@ -2839,50 +2937,70 @@ Window {
             return "ending-punctuation page=" + root.pageIndex + " char=" + lastChar
         }
         var linePx = Math.max(1, root.readerEstimatedLinePixels())
-        var bodyHeight = Math.ceil(readerBodyText.height)
+        var paginationHeight = Math.ceil(root.readerBodyHeight(root.currentReaderTextTopY))
+        var viewportHeight = Math.ceil(root.readerTextViewportHeight(root.currentReaderTextTopY))
         var paintedHeight = Math.ceil(readerBodyText.paintedHeight)
-        if (bodyHeight % linePx !== 0) {
-            return "non-line-height bodyHeight=" + bodyHeight + " linePx=" + linePx
+        if (paginationHeight % linePx !== 0) {
+            return "non-line-height paginationHeight=" + paginationHeight + " linePx=" + linePx
         }
-        if (paintedHeight > bodyHeight + 2) {
-            return "overflow page=" + root.pageIndex + " painted=" + paintedHeight + " body=" + bodyHeight
+        if (paintedHeight > viewportHeight - root.readerTextBottomGuard) {
+            return "overflow page=" + root.pageIndex + " painted=" + paintedHeight + " viewport=" + viewportHeight
         }
-        if (readerBodyText.y + paintedHeight > readerBodyText.y + bodyHeight + 2) {
-            return "bottom-overlap page=" + root.pageIndex + " paintedBottom=" + (readerBodyText.y + paintedHeight) + " bodyBottom=" + (readerBodyText.y + bodyHeight)
+        if (readerBodyText.y + paintedHeight > root.readerContentBottom - root.readerTextBottomGuard) {
+            return "bottom-overlap page=" + root.pageIndex + " paintedBottom=" + (readerBodyText.y + paintedHeight) + " contentBottom=" + root.readerContentBottom
+        }
+        var measuredHeight = root.readerMeasuredPageHeight(root.currentReaderTextStart,
+                                                            root.currentReaderTextEnd,
+                                                            root.readerPageImages[root.pageIndex] || ({}))
+        if (Math.abs(measuredHeight - paintedHeight) > 2) {
+            return "measurement-drift page=" + root.pageIndex + " measure=" + measuredHeight + " painted=" + paintedHeight
         }
         if (root.currentReaderImageSource === "" && root.pageIndex < root.readerCachedPageCount - 1
                 && !root.isReaderChapterEnd(root.currentReaderTextEnd)
                 && !root.isReaderNearChapterEnd(root.currentReaderTextStart, root.currentReaderTextEnd)
-                && paintedHeight < bodyHeight * 0.97) {
-            return "underfilled-page page=" + root.pageIndex + " painted=" + paintedHeight + " body=" + bodyHeight
+                && paintedHeight < paginationHeight * 0.97) {
+            return "underfilled-page page=" + root.pageIndex + " painted=" + paintedHeight + " pagination=" + paginationHeight
         }
         return ""
     }
 
-    function runReaderLayoutSelfTest() {
-        root.readerSelfTestSavedSettings = root.captureReaderSettings()
-        root.readerFontChoice = "霞鹜文楷"
-        root.readerFontSize = 38
-        root.readerFontWeight = Font.DemiBold
-        root.readerLineHeight = 1.26
-        root.readerParagraphSpacing = 12
-        root.readerFirstLineIndentChars = 2
-        root.readerMargin = 64
-        if (!root.enterReaderForSelfTest("reader-layout-selftest")) {
-            return
-        }
+    function prepareReaderLayoutSelfTestCase() {
+        var layoutCase = root.readerLayoutSelfTestCases[root.readerLayoutSelfTestCaseCursor] || ({})
+        root.readerFontChoice = String(layoutCase.fontChoice || "霞鹜文楷")
+        root.readerLineHeight = Number(layoutCase.lineHeight || 1.26)
         root.rebuildReaderPagination()
         var count = Math.max(1, root.readerCachedPageCount)
         var imagePage = root.firstReaderImagePage()
         root.readerLayoutSelfTestPages = root.uniqueReaderLayoutPages([
             Math.floor(count * 0.08),
-            Math.floor(count * 0.33),
-            Math.floor(count * 0.66),
-            Math.floor(count * 0.9),
-            imagePage > Math.floor(count * 0.04) ? imagePage : Math.floor(count * 0.12)
+            Math.floor(count * 0.52),
+            Math.floor(count * 0.88),
+            imagePage > Math.floor(count * 0.04) ? imagePage : Math.floor(count * 0.08)
         ], count)
         root.readerLayoutSelfTestCursor = 0
         root.setReaderPage(root.readerLayoutSelfTestPages[0] || 0)
+    }
+
+    function runReaderLayoutSelfTest() {
+        root.readerSelfTestSavedSettings = root.captureReaderSettings()
+        root.readerFontSize = 38
+        root.readerFontWeight = Font.DemiBold
+        root.readerParagraphSpacing = 12
+        root.readerFirstLineIndentChars = 2
+        root.readerMargin = 64
+        root.readerLayoutSelfTestCases = []
+        var fonts = ["微米黑", "正黑", "霞鹜文楷", "思源黑体", "思源宋体", "寒蝉正楷", "寒蝉活宋"]
+        var lineHeights = [1.16, 1.26, 1.36, 1.46]
+        for (var fontIndex = 0; fontIndex < fonts.length; fontIndex++) {
+            for (var lineIndex = 0; lineIndex < lineHeights.length; lineIndex++) {
+                root.readerLayoutSelfTestCases.push({ "fontChoice": fonts[fontIndex], "lineHeight": lineHeights[lineIndex] })
+            }
+        }
+        root.readerLayoutSelfTestCaseCursor = 0
+        if (!root.enterReaderForSelfTest("reader-layout-selftest")) {
+            return
+        }
+        root.prepareReaderLayoutSelfTestCase()
         readerLayoutSelfTestTimer.restart()
     }
 
@@ -3096,12 +3214,12 @@ Window {
 
     Timer {
         id: readerLayoutSelfTestTimer
-        interval: 700
+        interval: 350
         repeat: false
         onTriggered: {
-        if (lxgwWenKaiFont.status !== FontLoader.Ready || root.readerFontFamily === "") {
+        if (root.readerFontFamily === "") {
                 root.restoreReaderSettings(root.readerSelfTestSavedSettings)
-                console.log("reader-layout-selftest=fail font-status=" + lxgwWenKaiFont.status + " family=" + root.readerFontFamily)
+                console.log("reader-layout-selftest=fail font-family-empty choice=" + root.readerFontChoice)
                 appControl.quitToSystem()
                 return
             }
@@ -3114,9 +3232,17 @@ Window {
             }
             root.readerLayoutSelfTestCursor += 1
             if (root.readerLayoutSelfTestCursor >= root.readerLayoutSelfTestPages.length) {
-                console.log("reader-layout-selftest=ok pages=" + root.readerLayoutSelfTestPages.join(",") +
+                root.readerLayoutSelfTestCaseCursor += 1
+                if (root.readerLayoutSelfTestCaseCursor < root.readerLayoutSelfTestCases.length) {
+                    root.prepareReaderLayoutSelfTestCase()
+                    readerLayoutSelfTestTimer.restart()
+                    return
+                }
+                console.log("reader-layout-selftest=ok cases=" + root.readerLayoutSelfTestCases.length +
+                            " pages=" + root.readerLayoutSelfTestPages.join(",") +
                             " linePx=" + root.readerEstimatedLinePixels() +
-                            " bodyHeight=" + Math.ceil(readerBodyText.height) +
+                            " paginationHeight=" + Math.ceil(root.readerBodyHeight(root.currentReaderTextTopY)) +
+                            " viewportHeight=" + Math.ceil(readerBodyText.height) +
                             " paintedHeight=" + Math.ceil(readerBodyText.paintedHeight))
                 root.restoreReaderSettings(root.readerSelfTestSavedSettings)
                 appControl.quitToSystem()
@@ -4228,10 +4354,10 @@ Window {
             }
         }
 
-        var fontChoices = ["系统", "微米黑", "正黑", "霞鹜文楷"]
+        var fontChoices = ["系统", "微米黑", "正黑", "霞鹜文楷", "思源黑体", "思源宋体", "寒蝉正楷", "寒蝉活宋"]
         for (var f = 0; f < fontChoices.length; f++) {
-            var fontX = 132 + f * (132 + 12)
-            if (root.readerPointInRect(lx, ly, fontX, 552, 140, 56)) {
+            var fontX = 124 + f * (78 + 3)
+            if (root.readerPointInRect(lx, ly, fontX, 552, 78, 56)) {
                 root.readerFontChoice = fontChoices[f]
                 root.applyReaderSettingChange(true)
                 return true
@@ -4240,7 +4366,7 @@ Window {
 
         var weightValues = [Font.DemiBold, Font.Bold]
         for (var w = 0; w < weightValues.length; w++) {
-            var weightX = 772 + w * (52 + 8)
+            var weightX = 840 + w * (52 + 6)
             if (root.readerPointInRect(lx, ly, weightX, 552, 60, 56)) {
                 root.readerFontWeight = weightValues[w]
                 root.applyReaderSettingChange(true)
@@ -7387,13 +7513,38 @@ Window {
             }
         }
 
+        // Keep a hidden QTextDocument in the same scene and font path as the
+        // visible reader. Pagination uses its painted height to choose a safe
+        // page end before any text is clipped near the footer.
+        TextEdit {
+            id: readerPageMeasure
+            x: -root.width - 32
+            y: -root.height - 32
+            width: root.readerTextWidth()
+            height: Math.max(1, root.readerTextViewportHeight(root.readerTextTopMargin))
+            opacity: 0
+            enabled: false
+            readOnly: true
+            activeFocusOnPress: false
+            selectByMouse: false
+            selectByKeyboard: false
+            cursorVisible: false
+            focus: false
+            textFormat: TextEdit.RichText
+            color: root.paperColor
+            font.pixelSize: root.readerFontSize
+            font.family: root.readerFontFamily
+            font.weight: root.readerFontWeight
+            wrapMode: TextEdit.Wrap
+        }
+
         TextEdit {
             id: readerBodyText
             x: root.readerMargin
             y: root.currentReaderTextTopY
             z: 2
             width: root.readerTextWidth()
-            height: root.readerBodyHeight(root.currentReaderTextTopY)
+            height: root.readerTextViewportHeight(root.currentReaderTextTopY)
             text: root.formatReaderText(root.currentReaderPageText, root.currentReaderTextStart, root.currentReaderTextEnd) + "<!--" + root.forceReaderRefresh + "-->"
             textFormat: TextEdit.RichText
             color: "#111111"
@@ -8680,14 +8831,14 @@ Window {
             }
 
             Row {
-                x: 132
+                x: 124
                 y: 558
-                spacing: 12
+                spacing: 3
 
                 Repeater {
-                    model: ["系统", "微米黑", "正黑", "霞鹜文楷"]
+                    model: ["系统", "微米黑", "正黑", "霞鹜文楷", "思源黑体", "思源宋体", "寒蝉正楷", "寒蝉活宋"]
                     Rectangle {
-                        width: 132
+                        width: 78
                         height: 42
                         radius: 7
                         color: root.surfaceColor
@@ -8698,7 +8849,7 @@ Window {
                             anchors.centerIn: parent
                             text: modelData
                             color: root.readerFontChoice === modelData ? root.brandGreenDark : root.inkColor
-                            font.pixelSize: 16
+                            font.pixelSize: 13
                             font.bold: true
                         }
 
@@ -8715,7 +8866,7 @@ Window {
             }
 
             Text {
-                x: 714
+                x: 778
                 y: 566
                 text: "字重"
                 color: root.inkColor
@@ -8724,9 +8875,9 @@ Window {
             }
 
             Row {
-                x: 772
+                x: 840
                 y: 558
-                spacing: 8
+                spacing: 6
 
                 Repeater {
                     model: [

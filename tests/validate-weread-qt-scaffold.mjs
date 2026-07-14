@@ -736,6 +736,11 @@ assert(qml.includes('FontLoader'), 'reader must load selectable local fonts');
 assert(qml.includes('id: lxgwWenKaiFont'), 'reader must load LXGW WenKai as a selectable local font');
 assert(qml.includes('file:///home/root/weread-qt/fonts/lxgw-wenkai.ttf'), 'reader must load the deployed LXGW WenKai TTF from the app font directory');
 assert(qml.includes('readerFontChoice === "霞鹜文楷"'), 'reader font selector must expose LXGW WenKai under its Chinese name');
+assert(qml.includes('id: sourceHanSansFont') && qml.includes('source-han-sans-sc.otf'), 'reader must load Source Han Sans SC');
+assert(qml.includes('id: sourceHanSerifFont') && qml.includes('source-han-serif-sc.otf'), 'reader must load Source Han Serif SC');
+assert(qml.includes('id: chillKaiFont') && qml.includes('chill-kai.ttf'), 'reader must load ChillKai');
+assert(qml.includes('id: chillHuoSongFont') && qml.includes('chill-huosong.otf'), 'reader must load ChillHuoSong');
+assert(qml.includes('"思源黑体"') && qml.includes('"思源宋体"') && qml.includes('"寒蝉正楷"') && qml.includes('"寒蝉活宋"'), 'reader selector must expose verified OFL Chinese fonts');
 assert(qml.includes('"霞鹜文楷"'), 'reader settings font model must include LXGW WenKai');
 assert(qml.includes('formatReaderText'), 'reader must format paragraphs with spacing and hanging indent');
 assert(qml.includes('property int currentReaderTextStart'), 'reader must remember the current page text start offset for continuation paragraph formatting');
@@ -825,7 +830,7 @@ assert(qml.includes('function readerAvoidEndingPunctuation'), 'reader pagination
 assert(qml.includes('function readerCleanPageEnd'), 'reader pagination must use one shared page-end cleanup rule');
 assert(qml.includes('root.readerAvoidLeadingPunctuation(body, safeStart, adjusted)'), 'reader preferred page end must apply leading-punctuation avoidance after ending-punctuation cleanup');
 assert(qml.includes('root.readerCleanPageEnd(body, safeStart,'), 'reader preferred page end must clean punctuation on every candidate page end');
-assert(qml.includes('root.readerNextPageOffset(offset, topY)'), 'reader pagination batches must advance by the shared page-end function');
+assert(qml.includes('root.readerNextPageOffset(offset, topY, image)'), 'reader pagination batches must advance by the shared image-aware page-end function');
 assert(qml.includes('readerPageCountFor'), 'reader must compute a real page count from body text');
 assert(qml.includes('readerPageText'), 'reader must render the current page text, not the whole chapter');
 assert(qml.includes('readerFirstPageChars'), 'reader pagination must account for the image-shortened first page');
@@ -907,11 +912,11 @@ assert(qml.includes('property real startX') && qml.includes('mouse.x - startX > 
 assert(qml.includes('width: 96') && qml.includes('root.showReaderCatalog = true'), 'reader catalog open gesture must live on the left edge');
 assert(!readerPageTextFunction.includes('lastIndexOf'), 'reader page rendering must not shorten page ends without moving the next page start');
 assert(qml.includes('readerContentBottom'), 'reader must reserve a bottom safe area before the footer');
-assert(qml.includes('height: root.readerBodyHeight(root.currentReaderTextTopY)'), 'reader body must not overlap footer');
+assert(qml.includes('height: root.readerTextViewportHeight(root.currentReaderTextTopY)'), 'reader body must use the complete footer-safe viewport');
 assert(qml.includes('id: readerBodyText'), 'reader body text must have an id so device self-tests can inspect real painted metrics');
 assert(qml.includes('readerBodyText.paintedHeight'), 'reader layout self-test must inspect actual painted text height');
 assert(qml.includes('underfilled-page page='), 'reader layout self-test must catch pages that waste too much usable text area');
-assert(qml.includes('paintedHeight < bodyHeight * 0.97'), 'reader layout self-test must enforce a high fill ratio for ordinary text pages');
+assert(qml.includes('paintedHeight < paginationHeight * 0.97'), 'reader layout self-test must enforce a high fill ratio for ordinary text pages');
 assert(qml.includes('!root.isReaderChapterEnd(root.currentReaderTextEnd)'), 'reader layout self-test must not reject intentional chapter-boundary whitespace');
 assert(qml.includes('function isReaderNearChapterEnd'), 'reader layout self-test must allow short tail whitespace immediately before chapter boundaries');
 assert(qml.includes('readerFooterTop'), 'reader page must expose a stable footer band');
@@ -979,7 +984,7 @@ assert(qml.includes('root.restoreReaderSettings(root.readerSelfTestSavedSettings
 assert(qml.includes('selfTestMode === "reader-layout"'), 'QML must run the layout self-test only when explicitly requested');
 assert(qml.includes('reader-layout-selftest=ok'), 'reader layout self-test must write an unambiguous success marker');
 assert(qml.includes('leading-punctuation page='), 'reader layout self-test must reject body pages that begin with Chinese punctuation');
-const readerLayoutSelfTestSnippet = qml.slice(qml.indexOf('function runReaderLayoutSelfTest'), qml.indexOf('property double settingsSelfTestStartMs'));
+const readerLayoutSelfTestSnippet = qml.slice(qml.indexOf('function prepareReaderLayoutSelfTestCase'), qml.indexOf('property double settingsSelfTestStartMs'));
 assert(readerLayoutSelfTestSnippet.includes('Math.floor(count * 0.08)'), 'reader layout self-test must skip copyright/front-matter pages and sample body text');
 assert(!readerLayoutSelfTestSnippet.includes('[\n            0,'), 'reader layout self-test must not use page zero front matter as the typography proof');
 const enterReaderIndex = qml.indexOf('function enterReaderForBook');
@@ -1116,6 +1121,8 @@ assert(runScript.includes('apps/weread-move/tools/refresh-shelf.lua'), 'run scri
 assert(runScript.includes('wqy-microhei.ttc'), 'run script must deploy WenQuanYi Micro Hei');
 assert(runScript.includes('wqy-zenhei.ttc'), 'run script must deploy WenQuanYi Zen Hei');
 assert(runScript.includes('lxgw-wenkai.ttf'), 'run script must deploy LXGW WenKai');
+assert(runScript.includes('source-han-sans-sc.otf') && runScript.includes('source-han-serif-sc.otf'), 'run script must deploy Source Han Sans and Serif');
+assert(runScript.includes('chill-kai.ttf') && runScript.includes('chill-huosong.otf'), 'run script must deploy both Chill fonts');
 
 const sessionScript = read('scripts/weread-qt-session.sh');
 assert(sessionScript.includes('systemctl stop xochitl'), 'session script must stop xochitl for official epaper app launch');
@@ -1155,6 +1162,8 @@ assert(appLoadScript.includes('refresh-shelf.lua'), 'AppLoad installer must depl
 assert(appLoadScript.includes('wqy-microhei.ttc'), 'AppLoad installer must deploy WenQuanYi Micro Hei');
 assert(appLoadScript.includes('wqy-zenhei.ttc'), 'AppLoad installer must deploy WenQuanYi Zen Hei');
 assert(appLoadScript.includes('lxgw-wenkai.ttf'), 'AppLoad installer must deploy LXGW WenKai');
+assert(appLoadScript.includes('source-han-sans-sc.otf') && appLoadScript.includes('source-han-serif-sc.otf'), 'AppLoad installer must deploy Source Han Sans and Serif');
+assert(appLoadScript.includes('chill-kai.ttf') && appLoadScript.includes('chill-huosong.otf'), 'AppLoad installer must deploy both Chill fonts');
 assert(appLoadScript.includes('apps/weread-qt/icon.png'), 'AppLoad installer must deploy the WeRead Qt icon');
 assert(appLoadScript.includes('icon.png'), 'AppLoad entry must install an icon');
 assert(appLoadScript.includes('微信读书'), 'AppLoad entry should show a Chinese app name');

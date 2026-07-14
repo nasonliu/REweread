@@ -44,10 +44,16 @@ Do not blindly install the newest XOVI/AppLoad on an older device image. Their h
 | Font | Source | License note |
 | --- | --- | --- |
 | LXGW WenKai | https://github.com/lxgw/LxgwWenKai | SIL Open Font License; include license in a release package |
+| Source Han Sans SC（思源黑体） | https://github.com/adobe-fonts/source-han-sans | SIL Open Font License 1.1; pinned upstream source and checksum |
+| Source Han Serif SC（思源宋体） | https://github.com/adobe-fonts/source-han-serif | SIL Open Font License 1.1; pinned upstream source and checksum |
+| ChillKai（寒蝉正楷体） | https://github.com/Warren2060/Chillkai | SIL Open Font License 1.1; pinned release archive and checksum |
+| ChillHuoSong（寒蝉活宋体） | https://github.com/Warren2060/ChillMovableType | SIL Open Font License 1.1; pinned release archive and checksum |
 | WenQuanYi Micro Hei | https://sourceforge.net/projects/wqy/files/wqy-microhei/ | Apache-2.0 or GPL option; document the selected terms |
 | WenQuanYi Zen Hei | https://sourceforge.net/projects/wqy/files/wqy-zenhei/ | GPL with font embedding exception; include notices |
 
-Fonts are downloaded by `scripts/download-reader-fonts.sh` to `downloads/fonts/`. Public binary distribution must include the applicable font licenses even though font binaries are not stored in this source repository.
+Fonts are downloaded by `scripts/download-reader-fonts.sh` to `downloads/fonts/`, pinned by source/release URL and SHA-256. The reader exposes 微米黑、正黑、霞鹜文楷、思源黑体、思源宋体、寒蝉正楷和寒蝉活宋（plus system fallback). Public binary distribution must include the applicable font licenses even though font binaries are not stored in this source repository.
+
+方正、仓耳、汉仪及来源无法由权利方确认的字体不随项目打包，除非未来提供兼容的再分发许可和权威来源。
 
 ## WeRead API dependency
 

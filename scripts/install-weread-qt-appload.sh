@@ -47,7 +47,11 @@ fi
 for font in \
   "$ROOT_DIR/downloads/fonts/stage/wqy-microhei/wqy-microhei.ttc" \
   "$ROOT_DIR/downloads/fonts/stage/wqy-zenhei/wqy-zenhei.ttc" \
-  "$ROOT_DIR/downloads/fonts/stage/lxgw-wenkai/lxgw-wenkai.ttf"; do
+  "$ROOT_DIR/downloads/fonts/stage/lxgw-wenkai/lxgw-wenkai.ttf" \
+  "$ROOT_DIR/downloads/fonts/stage/source-han-sans-sc/source-han-sans-sc.otf" \
+  "$ROOT_DIR/downloads/fonts/stage/source-han-serif-sc/source-han-serif-sc.otf" \
+  "$ROOT_DIR/downloads/fonts/stage/chill-kai/chill-kai.ttf" \
+  "$ROOT_DIR/downloads/fonts/stage/chill-huosong/chill-huosong.otf"; do
   if [[ ! -s "$font" ]]; then
     echo "Missing font dependency: $font" >&2
     echo "Run scripts/download-reader-fonts.sh first." >&2
@@ -72,6 +76,10 @@ ssh "$MOVE_HOST" "rm -rf '$REMOTE_STAGE' && mkdir -p '$REMOTE_STAGE/fonts' '$REM
 "${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/wqy-microhei/wqy-microhei.ttc" "$MOVE_HOST:$REMOTE_STAGE/fonts/wqy-microhei.ttc"
 "${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/wqy-zenhei/wqy-zenhei.ttc" "$MOVE_HOST:$REMOTE_STAGE/fonts/wqy-zenhei.ttc"
 "${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/lxgw-wenkai/lxgw-wenkai.ttf" "$MOVE_HOST:$REMOTE_STAGE/fonts/lxgw-wenkai.ttf"
+"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/source-han-sans-sc/source-han-sans-sc.otf" "$MOVE_HOST:$REMOTE_STAGE/fonts/source-han-sans-sc.otf"
+"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/source-han-serif-sc/source-han-serif-sc.otf" "$MOVE_HOST:$REMOTE_STAGE/fonts/source-han-serif-sc.otf"
+"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/chill-kai/chill-kai.ttf" "$MOVE_HOST:$REMOTE_STAGE/fonts/chill-kai.ttf"
+"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/chill-huosong/chill-huosong.otf" "$MOVE_HOST:$REMOTE_STAGE/fonts/chill-huosong.otf"
 "${SCP[@]}" -r "$ROOT_DIR/apps/weread-move/lib" "$MOVE_HOST:$REMOTE_STAGE/helper/lib"
 for tool in \
   account-status.lua \

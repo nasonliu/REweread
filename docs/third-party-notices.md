@@ -8,6 +8,12 @@ The upstream repository licenses this dictionary under Apache License 2.0 and at
 
 This attribution does not change the repository's PolyForm Noncommercial license for project-owned code, nor does it resolve the separate WeRead, upstream-plugin or public-release blockers.
 
+## Reader fonts
+
+The build-only font downloader fetches Source Han Sans SC, Source Han Serif SC, ChillKai, ChillHuoSong and LXGW WenKai from their official upstream projects. These fonts are not committed to this repository. A build or binary package that includes them must retain the complete [SIL Open Font License 1.1](https://openfontlicense.org/) text and upstream copyright notices.
+
+The downloader verifies both upstream archives and extracted Chill font files by SHA-256 before installation. It does not download fonts whose source or redistribution rights cannot be established.
+
 ## Quill direct framebuffer adapter
 
 `apps/weread-qt/direct_ink_framebuffer.*` adapts the independently authored

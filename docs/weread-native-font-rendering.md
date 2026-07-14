@@ -66,4 +66,6 @@ Initial native reader defaults:
 - WenQuanYi Micro Hei: https://sourceforge.net/projects/wqy/files/wqy-microhei/0.2.0-beta/
 - WenQuanYi Zen Hei: https://sourceforge.net/projects/wqy/files/wqy-zenhei/
 - LXGW WenKai Screen: https://github.com/lxgw/LxgwWenKai-Screen
+- Source Han Sans / Serif: https://github.com/adobe-fonts/source-han-sans and https://github.com/adobe-fonts/source-han-serif
+- ChillKai / ChillHuoSong: https://github.com/Warren2060/Chillkai and https://github.com/Warren2060/ChillMovableType
 - KOReader user guide font weight / contrast notes: https://koreader.rocks/user_guide/

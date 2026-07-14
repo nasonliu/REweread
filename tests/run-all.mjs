@@ -28,6 +28,7 @@ const scripts = [
   'validate-reader-document.mjs',
   'validate-reader-word-wrap.mjs',
   'validate-reader-pagination-fill.mjs',
+  'validate-reader-measured-pagination.mjs',
   'validate-native-reader-view.mjs',
   'validate-native-raster.mjs',
   'validate-native-framebuffer.mjs',

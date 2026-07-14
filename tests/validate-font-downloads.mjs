@@ -21,6 +21,12 @@ assert(script.includes('raw.githubusercontent.com/lxgw/LxgwWenKai'), 'font downl
 assert(script.includes('LXGW_WENKAI_COMMIT'), 'font download script must pin LXGW WenKai to a commit');
 assert(script.includes('LXGWWenKai-Regular.ttf'), 'font download script must stage LXGW WenKai regular TTF');
 assert(script.includes('lxgw-wenkai/lxgw-wenkai.ttf'), 'font download script must normalize LXGW WenKai to a stable staged filename');
+assert(script.includes('SOURCE_HAN_SANS_COMMIT') && script.includes('SOURCE_HAN_SERIF_COMMIT'), 'font download script must pin both Source Han font sources');
+assert(script.includes('source-han-sans-sc/source-han-sans-sc.otf'), 'font download script must normalize Source Han Sans SC');
+assert(script.includes('source-han-serif-sc/source-han-serif-sc.otf'), 'font download script must normalize Source Han Serif SC');
+assert(script.includes('ChillKai.zip') && script.includes('ChillHuoSong_F.zip'), 'font download script must fetch official Chill archives');
+assert(script.includes('ChillKai/ChillKai.ttf') && script.includes('ChillHuoSong_F_Regular.otf'), 'font download script must extract regular Chill faces');
+assert(script.includes('CHILL_KAI_FONT_SHA256') && script.includes('CHILL_HUOSONG_FONT_SHA256'), 'font download script must verify extracted Chill font checksums');
 assert(script.includes('/home/root/.local/share/fonts'), 'font download script must install to the Move user font directory');
 assert(script.includes('MOVE_HOST="${MOVE_HOST:-root@10.11.99.1}"'), 'font download script must default to the official USB Move host');
 assert(script.includes('rsync'), 'font download script must copy fonts with rsync');

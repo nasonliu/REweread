@@ -47,7 +47,7 @@ assert(header.includes('stylusTapped'), 'StylusStore must expose short pen taps 
 const qml = read('apps/weread-qt/Main.qml');
 assert(qml.includes('function readerEstimatedLinePixels() {\n        return root.readerLinePixels()\n    }'), 'reader pagination must estimate the same line pixels that rich TextEdit actually renders');
 assert(qml.includes('function readerPaginationHeightBudget(topY) {\n        return root.readerBodyHeight(topY)\n    }'), 'reader pagination must use the full body height instead of reserving a large blank bottom band');
-assert(qml.includes('paintedHeight < bodyHeight * 0.97'), 'reader layout selftest must reject pages that leave more than three percent blank space');
+assert(qml.includes('paintedHeight < paginationHeight * 0.97'), 'reader layout selftest must reject pages that leave more than three percent blank space');
 assert(qml.includes('!root.isReaderChapterEnd(root.currentReaderTextEnd)'), 'reader layout selftest must allow natural blank space at chapter boundaries');
 assert(qml.includes('!root.isReaderNearChapterEnd(root.currentReaderTextStart, root.currentReaderTextEnd)'), 'reader layout selftest must allow short tail whitespace near chapter boundaries');
 assert(qml.includes('readerSettingsPanelHeight'), 'reader settings panel height must be stable and shared with its repaint backing');
