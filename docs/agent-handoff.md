@@ -1,14 +1,14 @@
 # REweread Agent 交接手册
 
-更新时间：2026-07-13
+更新时间：2026-07-14
 
 这份文档面向第一次接手仓库的新 AI Agent。先读 `AGENTS.md`，再从头读完本文，然后才运行命令或接触设备。本文只记录可公开的项目状态，不包含设备地址、账号、书名、Cookie、API Key、二维码 UID、用户缓存或原始日志。
 
 ## 1. 一句话现状
 
-REweread 已完成第一个 Qt 产品里程碑 `1.0.0-rc.1`：源码已合并到 `main`，测试、官方 chiappa SDK 构建和当前测试设备上的原子升级均通过；GitHub Release 仍是 Draft prerelease，未创建公开标签，也没有公开二进制。
+REweread 当前源码里程碑为 `1.5.0`：Qt 产品已加入拼音候选翻页、百度 OCR 手写输入、页内自由笔迹、块级 OCR、直接帧缓冲快速墨迹和防手掌误触。1.5 源码已通过完整静态验证、官方 chiappa SDK 构建，并在当前测试设备上完成连续迭代启动验证；仍未创建 `v1.5.0` 标签或公开二进制。
 
-它还不是可面向普通用户广泛分发的正式 1.0。当前存在服务授权、上游许可证、干净设备安装/卸载和长期电池测试等阻塞项。
+它仍不是可面向普通用户广泛分发的正式产品。当前存在服务授权、上游许可证、干净设备安装/卸载和长期电池测试等阻塞项。
 
 ## 2. 接手后的第一组动作
 
@@ -26,7 +26,7 @@ for file in scripts/*.sh apps/weread-move/*.sh; do bash -n "$file"; done
 预期：
 
 - 基线来自 `main`。
-- `VERSION` 为 `1.0.0-rc.1`。
+- `VERSION` 为 `1.5.0`。
 - 安全检查和静态验证全部通过。
 - 不存在 SDK、字体、构建目录、第三方 checkout 或用户数据的待提交文件。
 
@@ -45,8 +45,10 @@ for file in scripts/*.sh apps/weread-move/*.sh; do bash -n "$file"; done
 
 发布状态：
 
-- GitHub PR #1 已合并。
+- `1.5.0` 是当前 source-only 源码里程碑；提交源码不等于发布普通用户二进制。
+- GitHub PR #1 已合并，保留 `1.0.0-rc.1` 的历史记录。
 - `v1.0.0-rc.1` 是 Draft prerelease 名称，不是公开标签。
+- 未创建 `v1.5.0` 标签或 Release；不要因为 `VERSION` 已更新就自动发布。
 - Draft 中只附源码归档和 `SHA256SUMS.txt`。
 - 源码归档 SHA-256：`2eaf1c08db968606ac539edc2247e1c3aad267cdb3ca6ab9538b323fd1e571d8`。
 - 不得擅自把 Draft 点成 Publish，也不得附加应用二进制或依赖包。
@@ -96,6 +98,10 @@ Main.qml
 | 登录和退出 | `account_store.*`、`login-qr.lua`、`logout.lua` |
 | 云端进度 | `progress_sync_store.*`、`fetch-progress.lua`、`sync-progress.lua` |
 | 手写笔 | `stylus_store.*` 和 QML pen palette/hit layers |
+| 快速墨迹 | `ink_canvas_item.*`、`direct_ink_framebuffer.*` |
+| 拼音与手写输入 | `PinyinEngine.js`、`PinyinLexicon.js`、`Main.qml` keyboard helpers |
+| 百度 OCR | `ocr_store.*`、`ocr_setup_server.*`、`docs/baidu-ocr-configuration-flow.md` |
+| 自由笔迹锚点 | `FreeNoteAnchor.js`、`reader_store.*`、`Main.qml` |
 | 电源/磁吸套 | `power_store.*` |
 | Wi-Fi | `network_store.*` |
 | 前灯 | `frontlight_store.*` |
@@ -289,6 +295,13 @@ GET /api/auth/getLoginUid
 - 笔专用标注控制拒绝手触；普通按钮按需求接受笔和手。
 - 颜色胶囊、橡皮擦和评论/注释点击必须消费事件，不能顺带翻页。
 - 社交评论虚线偏移和手写高亮偏移是两类问题，不能共用一个“坐标补偿值”。
+- 跟手的临时黑色墨迹走 `direct_ink_framebuffer.*`：应用启动时在 QML 引擎之前捕获设备自带 `EPFramebuffer` 辅助缓冲，逐点只改帧缓冲并约每 8ms 合并一次单色局部刷新，不能同时调用逐点 `QQuickPaintedItem::update()`。
+- 这条路径移植自 MIT 许可的 Quill 最小适配边界；仓库只保存源码适配和许可文本，不保存厂商 `libqsgepaper.so`。设备不支持时必须自动回退到 Qt `InkCanvas` 和 `EPScreenModeItem::Pen`。
+- 当前 Move 真机启动状态应出现 `direct ink ready 960x1696 stride=3840`。QML 窗口与帧缓冲宽度可能不完全相等，绘制前必须按实际窗口尺寸缩放，不能硬编码 Paper Pro 的 `1620x2160`。
+- 落笔期间优先保证黑色笔头连续跟手；停笔约 280ms 后再由持久化 Qt 图层一次性刷新为所选颜色。不要让彩色刷新排队阻塞实时单色更新。
+- 页面笔迹比输入法多一条持久化链路。保存计时器必须在落笔期间停止，临时笔迹与已保存笔迹通过 `clientStrokeId` 去重；只改变时间、分组或 OCR 元数据时不能触发 `InkCanvas` 整层重建。
+- 百度 OCR 只识别用户选择的相邻笔迹块，不识别整页。拼音、本地自由笔迹、荧光笔和符号笔记不依赖 OCR。
+- Agent 指导 OCR 时先读 `docs/baidu-ocr-configuration-flow.md`；AppID 只用于核对应用，设备表单只填同一 OCR 应用的 API Key 与 Secret Key。真实凭据不得进入聊天、环境变量、命令或日志。
 
 ## 15. Docker、磁盘和构建的坑
 
@@ -395,6 +408,6 @@ ssh "$MOVE_HOST" '/home/root/xovi/start || systemctl start xochitl'
 
 新 Agent 可以这样向用户确认：
 
-> 我已经阅读 AGENTS.md 和 docs/agent-handoff.md。当前基线是 main 上的 1.0.0-rc.1 source-only 候选版；公开 Release 仍是 Draft。接下来我会先检查本地 Git 是否健康并运行仓库安全检查和全套验证，不读取或输出账号、书架和设备日志原文。涉及设备部署、根分区、重启、账号或数据删除前，我会先说明影响并等你确认。
+> 我已经阅读 AGENTS.md、docs/agent-handoff.md 和需要时的 docs/agent-upgrade-v1.5.md。当前源码基线是 1.5.0 source-only 里程碑，没有公开二进制或 v1.5.0 标签。接下来我会先检查本地 Git 是否健康并运行仓库安全检查和全套验证，不读取或输出账号、书架、百度凭据和设备日志原文。涉及设备部署、根分区、重启、账号或数据删除前，我会先说明影响并等你确认。
 
 完成这些后，再根据用户的新目标进入实现，不要重新从旧 KOReader UI 或早期设计稿开始。

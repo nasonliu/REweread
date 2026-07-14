@@ -7,10 +7,13 @@
 #include "app_control.h"
 #include "book_catalog_store.h"
 #include "discover_store.h"
+#include "direct_ink_framebuffer.h"
 #include "download_store.h"
 #include "frontlight_store.h"
 #include "network_store.h"
 #include "notes_store.h"
+#include "ocr_setup_server.h"
+#include "ocr_store.h"
 #include "power_store.h"
 #include "progress_sync_store.h"
 #include "qr_image_provider.h"
@@ -23,6 +26,11 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationName("WeRead Move");
     QCoreApplication::setOrganizationName("rm-weread");
 
+    // Capture the device-owned auxiliary framebuffer before the Qt Quick
+    // scenegraph asks for the same singleton. Unsupported builds safely fall
+    // back to the normal QQuickPaintedItem path.
+    DirectInkFramebuffer::instance().initialize();
+
     ShelfStore shelfStore;
     ReaderStore readerStore;
     DownloadStore downloadStore;
@@ -30,6 +38,8 @@ int main(int argc, char *argv[]) {
     FrontlightStore frontlightStore;
     NetworkStore networkStore;
     NotesStore notesStore;
+    OcrStore ocrStore;
+    OcrSetupServer ocrSetupServer(&ocrStore);
     PowerStore powerStore;
     ProgressSyncStore progressSyncStore;
     AccountStore accountStore;
@@ -46,6 +56,8 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("frontlightStore", &frontlightStore);
     engine.rootContext()->setContextProperty("networkStore", &networkStore);
     engine.rootContext()->setContextProperty("notesStore", &notesStore);
+    engine.rootContext()->setContextProperty("ocrStore", &ocrStore);
+    engine.rootContext()->setContextProperty("ocrSetupServer", &ocrSetupServer);
     engine.rootContext()->setContextProperty("powerStore", &powerStore);
     engine.rootContext()->setContextProperty("progressSyncStore", &progressSyncStore);
     engine.rootContext()->setContextProperty("accountStore", &accountStore);

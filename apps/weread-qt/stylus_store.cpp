@@ -31,6 +31,11 @@ StylusStore::StylusStore(QObject *parent) : QObject(parent) {
         qApp->installEventFilter(this);
     }
     m_moveClock.start();
+    m_palmReleaseTimer.setSingleShot(true);
+    m_palmReleaseTimer.setInterval(650);
+    connect(&m_palmReleaseTimer, &QTimer::timeout, this, [this]() {
+        setPalmRejectionActive(false);
+    });
     openMarkerDevice();
 }
 
@@ -58,13 +63,24 @@ void StylusStore::setActive(bool active) {
     if (m_markerNotifier != nullptr) {
         m_markerNotifier->setEnabled(m_active);
     }
+    if (!m_active) {
+        m_palmReleaseTimer.stop();
+        setPalmRejectionActive(false);
+    }
     emit activeChanged();
+}
+
+bool StylusStore::palmRejectionActive() const {
+    return m_palmRejectionActive;
 }
 
 bool StylusStore::eventFilter(QObject *watched, QEvent *event) {
     Q_UNUSED(watched);
 
     if (!m_active) {
+        return false;
+    }
+    if (m_markerFd >= 0) {
         return false;
     }
 
@@ -78,11 +94,14 @@ bool StylusStore::eventFilter(QObject *watched, QEvent *event) {
             : tabletEvent->scenePosition();
         const double pressure = tabletEvent->pressure();
         if (event->type() == QEvent::TabletPress) {
+            updatePalmRejection(true);
             emitStylusPress(pos.x(), pos.y(), pressure);
         } else if (event->type() == QEvent::TabletMove) {
+            updatePalmRejection(true);
             emitStylusMove(pos.x(), pos.y(), pressure);
         } else {
             emitStylusRelease(pos.x(), pos.y(), pressure);
+            updatePalmRejection(false);
         }
         event->accept();
         return true;
@@ -251,6 +270,7 @@ void StylusStore::processRawReport() {
             synthesizeTapAsMouseClick(x, y);
         }
     }
+    updatePalmRejection(m_toolPen != 0 || touching || m_penDown);
 }
 
 double StylusStore::mapRawAxis(int value, const AbsRange &range, int screenSize) const {
@@ -331,4 +351,23 @@ void StylusStore::emitStylusMove(double x, double y, double pressure) {
 
 void StylusStore::emitStylusRelease(double x, double y, double pressure) {
     emit stylusReleased(x, y, pressure);
+}
+
+void StylusStore::setPalmRejectionActive(bool active) {
+    if (m_palmRejectionActive == active) {
+        return;
+    }
+    m_palmRejectionActive = active;
+    emit palmRejectionActiveChanged();
+}
+
+void StylusStore::updatePalmRejection(bool penInRange) {
+    if (penInRange) {
+        m_palmReleaseTimer.stop();
+        setPalmRejectionActive(true);
+        return;
+    }
+    if (m_palmRejectionActive) {
+        m_palmReleaseTimer.start();
+    }
 }

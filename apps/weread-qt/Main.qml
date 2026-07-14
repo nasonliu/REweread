@@ -2,6 +2,8 @@ import QtQuick
 import QtQuick.Window
 import QtCore
 import "SocialAnchor.js" as SocialAnchor
+import "PinyinEngine.js" as PinyinEngine
+import "FreeNoteAnchor.js" as FreeNoteAnchor
 
 Window {
     id: root
@@ -9,6 +11,10 @@ Window {
     height: Screen.height
     visible: true
     color: root.paperColor
+
+    onClosing: function(close) {
+        root.flushPendingFreeInkStrokes()
+    }
 
     property color paperColor: "#ffffff"
     property color surfaceColor: "#ffffff"
@@ -58,22 +64,52 @@ Window {
     property bool showReaderFootnote: false
     property bool showDetailCatalog: false
     property bool showSoftKeyboard: false
+    property bool keyboardPinyinMode: true
+    property bool keyboardHandwritingMode: false
+    property string keyboardPinyinBuffer: ""
+    property var keyboardCandidates: []
+    property int keyboardCandidatePage: 0
+    property int keyboardCandidatePageSize: 5
+    property var keyboardHandwritingStrokes: []
+    property var keyboardHandwritingCurrentStroke: []
+    property var keyboardHandwritingCandidates: []
+    property string keyboardHandwritingStatus: ""
+    property bool keyboardHandwritingDrawing: false
     property bool annotationMode: false
     property string readerMarkerTool: "marker"
     property string readerMarkerColorName: "金"
     property string readerMarkerColor: "#b98218"
     property int readerMarkerLineWidth: Math.max(24, Math.round(readerFontSize * 0.72))
     property var currentStrokePoints: []
+    property var currentFreeNotePoints: []
+    property var currentFreeNoteStrokes: []
+    property var pendingFreeInkStrokes: []
+    property string pendingFreeInkBookId: ""
+    property string pendingFreeInkTitle: ""
+    property int pendingFreeInkPageIndex: -1
+    property int pendingFreeInkPageCount: 1
+    property int pendingFreeInkSequence: 0
+    property bool showHandwrittenNotes: false
+    property int readerNotesGutterWidth: 190
     property var readerCurrentLineBoxes: []
     property bool readerStylusToolsExpanded: false
     property bool readerStylusStrokeInToolbar: false
     property bool readerStylusCollapsePending: false
+    property bool readerClearArmed: false
+    property bool readerOcrBlockSelection: false
+    property string readerSelectedInkBlockId: ""
     property double readerSuppressPageTurnUntilMs: 0
     property int readerStylusToolBarWidth: 68
     property int readerStylusToolBarPadding: 10
     property int readerStylusToolDotSize: 44
     property int readerStylusToolGap: 14
+    property int readerStylusSectionGap: 16
     property var keyboardTarget: null
+    property string pendingDirectOcrKind: ""
+    property string pendingDirectOcrBookId: ""
+    property int pendingDirectOcrPageIndex: -1
+    property string pendingDirectOcrItemId: ""
+    property string readerInlineOcrStatus: ""
     property string pendingCatalogBookId: ""
     property var pendingCatalogChapter: ({})
     property real settingsDragOffset: 0
@@ -85,12 +121,10 @@ Window {
     property var frontlightLevels: [0, 10, 20, 40, 60, 80, 100]
     property var readerQuickFrontlightLevels: [0, 25, 50, 75, 100]
     property var keyboardRows: [
-        ["伊", "朗", "五", "百", "年", "书", "史", "文", "学", "传"],
-        ["的", "一", "是", "在", "人", "中", "国", "小", "说", "记"],
-        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
         ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
         ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
-        ["z", "x", "c", "v", "b", "n", "m"]
+        ["z", "x", "c", "v", "b", "n", "m"],
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
     ]
     property var highlightColors: [
         {"name": "绿", "value": "#17885b"},
@@ -99,11 +133,16 @@ Window {
         {"name": "蓝", "value": "#1d5f99"}
     ]
     property var readerStylusTools: [
-        {"id": "green", "tool": "marker", "name": "绿", "value": "#17885b"},
-        {"id": "gold", "tool": "marker", "name": "金", "value": "#b98218"},
-        {"id": "red", "tool": "marker", "name": "红", "value": "#9b2226"},
-        {"id": "blue", "tool": "marker", "name": "蓝", "value": "#1d5f99"},
-        {"id": "eraser", "tool": "eraser", "name": "擦", "value": "#ffffff"}
+        {"id": "green", "tool": "color", "name": "绿", "value": "#17885b", "label": ""},
+        {"id": "gold", "tool": "color", "name": "金", "value": "#b98218", "label": ""},
+        {"id": "red", "tool": "color", "name": "红", "value": "#9b2226", "label": ""},
+        {"id": "blue", "tool": "color", "name": "蓝", "value": "#1d5f99", "label": ""},
+        {"id": "marker", "tool": "marker", "name": "荧光笔", "value": "", "label": "划"},
+        {"id": "free", "tool": "free", "name": "自由写", "value": "", "label": "写"},
+        {"id": "notes", "tool": "notes", "name": "旧笔记", "value": "", "label": "笔"},
+        {"id": "ocr", "tool": "ocr", "name": "识别", "value": "", "label": "识"},
+        {"id": "eraser", "tool": "eraser", "name": "橡皮", "value": "#ffffff", "label": "擦"},
+        {"id": "clear", "tool": "clear", "name": "清除本页", "value": "", "label": "清"}
     ]
     property var readerLineHeightSteps: [
         {"label": "紧", "value": 1.16},
@@ -1098,6 +1137,17 @@ Window {
         return Math.min(12, Math.max(0, readerParagraphSpacing))
     }
 
+    function readerChapterEndDecorationHeight(textEnd) {
+        if (!root.isReaderChapterEnd(textEnd)) {
+            return 0
+        }
+        var smallLine = Math.max(24, Math.ceil(root.readerLinePixels() * 0.76))
+        return Math.max(root.readerParagraphSpacing * 2, 28)
+            + smallLine
+            + Math.max(root.readerParagraphSpacing, 12)
+            + smallLine
+    }
+
     function readerBodyHeight(topY) {
         var usable = Math.max(0, readerContentBottom - topY - readerBottomSafety())
         var linePx = Math.max(1, root.readerEstimatedLinePixels())
@@ -1345,6 +1395,19 @@ Window {
     }
 
     Timer {
+        id: readerInkPersistTimer
+        interval: 900
+        repeat: false
+        onTriggered: {
+            if ((root.currentFreeNotePoints || []).length > 0) {
+                readerInkPersistTimer.restart()
+                return
+            }
+            root.flushPendingFreeInkStrokes()
+        }
+    }
+
+    Timer {
         id: readerPaginationDebounceTimer
         interval: 420
         repeat: false
@@ -1468,8 +1531,16 @@ Window {
         return root.readerImageForPage(pageIndex) !== "" ? root.readerImageTextTopY : root.readerTextTopMargin
     }
 
+    function readerTextWidth() {
+        return Math.max(120, root.width - root.readerMargin * 2)
+    }
+
+    function readerTextRight() {
+        return root.readerMargin + root.readerTextWidth()
+    }
+
     function readerCharsPerPage(topY) {
-        var textWidth = Math.max(120, root.width - root.readerMargin * 2)
+        var textWidth = root.readerTextWidth()
         var charWidth = Math.max(1, root.readerFontSize * 0.92)
         var charsPerLine = Math.max(6, Math.floor(textWidth / charWidth))
         var linesPerPage = Math.max(2, Math.floor(root.readerBodyHeight(topY) / Math.max(1, root.readerEstimatedLinePixels())))
@@ -1477,14 +1548,14 @@ Window {
     }
 
     function readerEstimatedCharsPerLine() {
-        var textWidth = Math.max(120, root.width - root.readerMargin * 2)
+        var textWidth = root.readerTextWidth()
         var familySafety = root.readerFontChoice === "霞鹜文楷" ? 0.98 : 0.96
         var charWidth = Math.max(1, root.readerFontSize * familySafety)
         return Math.max(6, Math.floor(textWidth / charWidth))
     }
 
     function readerEstimatedFirstLineChars(indent) {
-        var textWidth = Math.max(120, root.width - root.readerMargin * 2 - Math.max(0, indent))
+        var textWidth = Math.max(120, root.readerTextWidth() - Math.max(0, indent))
         var familySafety = root.readerFontChoice === "霞鹜文楷" ? 0.98 : 0.96
         var charWidth = Math.max(1, root.readerFontSize * familySafety)
         return Math.max(4, Math.floor(textWidth / charWidth))
@@ -1496,7 +1567,7 @@ Window {
         var boxes = []
         var sourceCursor = 0
         var y = Math.max(0, Math.floor(Number(topY) || 0))
-        var pageWidth = Math.max(120, root.width - root.readerMargin * 2)
+        var pageWidth = root.readerTextWidth()
         var continuation = root.isParagraphContinuation(globalStart)
         var chapterStart = root.isReaderChapterStart(globalStart)
         var bodyLinePx = Math.max(1, root.readerLinePixels())
@@ -1642,7 +1713,7 @@ Window {
         if (textLength === 0) {
             return 0
         }
-        var textWidth = Math.max(120, root.width - root.readerMargin * 2)
+        var textWidth = root.readerTextWidth()
         var titleFontSize = root.readerFontSize * 1.24
         var titleLinePx = Math.max(1, Math.ceil(root.readerEstimatedLinePixels() * 1.24))
         var charsPerLine = Math.max(4, Math.floor(textWidth / Math.max(1, titleFontSize * 1.03)))
@@ -1735,8 +1806,9 @@ Window {
             var paragraphHeight = root.isReaderChapterStart(cursor)
                 ? root.readerEstimatedTitleHeightForLength(paragraphLength)
                 : root.readerEstimatedParagraphLinesForLength(paragraphLength, paragraphIndent) * linePx + root.readerEstimatedParagraphGap()
-            if (totalHeight + paragraphHeight <= maxHeight) {
-                totalHeight += paragraphHeight
+            var paragraphDecorationHeight = root.readerChapterEndDecorationHeight(nextStart)
+            if (totalHeight + paragraphHeight + paragraphDecorationHeight <= maxHeight) {
+                totalHeight += paragraphHeight + paragraphDecorationHeight
                 pageEnd = nextStart
                 cursor = nextStart
                 continue
@@ -1746,7 +1818,7 @@ Window {
                 var charBudget = Math.max(1, Math.floor(charsPerLine * availableLines * 0.94))
                 return Math.min(body.length, safeStart + charBudget)
             }
-            var remainingHeight = maxHeight - totalHeight
+            var remainingHeight = maxHeight - totalHeight - paragraphDecorationHeight
             var partialEnd = root.readerPartialParagraphEnd(body, cursor, paragraphEnd, remainingHeight, topY)
             if (partialEnd > cursor) {
                 return Math.max(safeStart + 1, partialEnd)
@@ -2108,6 +2180,10 @@ Window {
     }
 
     function saveCurrentStroke() {
+        if (root.readerMarkerTool === "free") {
+            root.saveCurrentFreeInkStroke()
+            return
+        }
         if (root.readerMarkerTool === "eraser") {
             root.eraseCurrentMarkerSelection()
             return
@@ -2129,13 +2205,38 @@ Window {
         }
         for (var i = 0; i < root.readerStylusTools.length; i++) {
             var dotX = root.readerStylusToolBarPadding + (readerStylusToolBar.width - root.readerStylusToolBarPadding * 2 - root.readerStylusToolDotSize) / 2
-            var dotY = root.readerStylusToolBarPadding + i * (root.readerStylusToolDotSize + root.readerStylusToolGap)
+            var dotY = root.readerStylusToolY(i)
             if (localX >= dotX && localX <= dotX + root.readerStylusToolDotSize
                     && localY >= dotY && localY <= dotY + root.readerStylusToolDotSize) {
                 return root.readerStylusTools[i]
             }
         }
         return ({})
+    }
+
+    function readerStylusToolY(index) {
+        return root.readerStylusToolBarPadding
+            + index * (root.readerStylusToolDotSize + root.readerStylusToolGap)
+            + (index >= 4 ? root.readerStylusSectionGap : 0)
+    }
+
+    function readerStylusToolSelected(tool) {
+        if (!tool) {
+            return false
+        }
+        if (tool.tool === "color") {
+            return tool.value === root.readerMarkerColor
+        }
+        if (tool.tool === "marker" || tool.tool === "free" || tool.tool === "eraser") {
+            return tool.tool === root.readerMarkerTool
+        }
+        if (tool.tool === "notes") {
+            return root.showHandwrittenNotes
+        }
+        if (tool.tool === "clear") {
+            return root.readerClearArmed
+        }
+        return false
     }
 
     function selectReaderStylusTool(tool) {
@@ -2145,19 +2246,74 @@ Window {
         if (tool.tool === "expand") {
             root.readerStylusToolsExpanded = true
             root.readerStylusCollapsePending = false
-            root.forceReaderRefresh += 1
+            return true
+        }
+        if (tool.tool !== "ocr") {
+            root.readerOcrBlockSelection = false
+            root.readerSelectedInkBlockId = ""
+        }
+        if (tool.tool === "color") {
+            root.readerMarkerColorName = tool.name || root.readerMarkerColorName
+            root.readerMarkerColor = tool.value || root.readerMarkerColor
+            root.annotationMode = true
+            root.readerStylusCollapsePending = true
+            return true
+        }
+        if (tool.tool === "notes") {
+            root.showHandwrittenNotes = !root.showHandwrittenNotes
+            root.readerStylusCollapsePending = true
+            return true
+        }
+        if (tool.tool === "ocr") {
+            root.readerClearArmed = false
+            readerClearConfirmTimer.stop()
+            root.beginReaderInkBlockOcrSelection()
+            return true
+        }
+        if (tool.tool === "clear") {
+            if (!root.readerClearArmed) {
+                root.readerClearArmed = true
+                root.readerStylusToolsExpanded = true
+                root.readerStylusCollapsePending = false
+                readerClearConfirmTimer.restart()
+            } else {
+                root.clearCurrentPageInkAndNotes()
+            }
             return true
         }
         root.readerMarkerTool = tool.tool || "marker"
-        if (root.readerMarkerTool === "marker") {
-            root.readerMarkerColorName = tool.name || root.readerMarkerColorName
-            root.readerMarkerColor = tool.value || root.readerMarkerColor
-        }
+        root.readerClearArmed = false
+        readerClearConfirmTimer.stop()
         root.readerStylusCollapsePending = true
         root.annotationMode = true
         root.currentStrokePoints = []
-        root.forceReaderRefresh += 1
+        root.currentFreeNotePoints = []
+        root.currentFreeNoteStrokes = []
+        readerInkCanvas.clearLive()
         return true
+    }
+
+    function clearCurrentPageInkAndNotes() {
+        root.flushPendingFreeInkStrokes()
+        readerInkCanvas.clearLive()
+        root.readerOcrBlockSelection = false
+        root.readerSelectedInkBlockId = ""
+        root.currentStrokePoints = []
+        root.currentFreeNotePoints = []
+        root.currentFreeNoteStrokes = []
+        readerStore.clearPageStrokes(root.currentBookId, root.pageIndex)
+        var notes = (readerStore.paragraphNotes || []).slice()
+        var placements = root.readerParagraphNotePlacements()
+        for (var index = 0; index < notes.length; ++index) {
+            var note = notes[index] || ({})
+            var noteId = String(note.noteId || "")
+            if (noteId !== "" && (placements[noteId] || {}).visible) {
+                readerStore.removeParagraphNote(root.currentBookId, noteId)
+            }
+        }
+        root.readerClearArmed = false
+        readerClearConfirmTimer.stop()
+        root.readerStylusCollapsePending = true
     }
 
     function markerPointFromStylus(x, y, pressure) {
@@ -2165,6 +2321,14 @@ Window {
         return ({
             "x": root.clamp(Math.round(Number(x) || 0), root.readerMargin, root.width - root.readerMargin),
             "y": root.clamp(Math.round(Number(y) || 0), root.currentReaderTextTopY, textBottom),
+            "pressure": Math.max(0, Number(pressure) || 0)
+        })
+    }
+
+    function freeNotePointFromStylus(x, y, pressure) {
+        return ({
+            "x": root.clamp(Math.round(Number(x) || 0), 12, root.width - 12),
+            "y": root.clamp(Math.round(Number(y) || 0), root.readerTextTopMargin, root.readerContentBottom),
             "pressure": Math.max(0, Number(pressure) || 0)
         })
     }
@@ -2179,24 +2343,48 @@ Window {
             root.readerStylusStrokeInToolbar = true
             return
         }
+        if (root.readerOcrBlockSelection) {
+            var inkBlock = root.readerInkBlockAt(x, y)
+            root.readerSuppressPageTurnUntilMs = Date.now() + 700
+            root.readerStylusStrokeInToolbar = true
+            if (inkBlock.blockId) {
+                root.recognizeReaderInkBlock(inkBlock)
+            } else {
+                root.readerOcrBlockSelection = false
+            }
+            return
+        }
         if (!root.annotationMode) {
             return
         }
-        root.currentStrokePoints = [root.markerPointFromStylus(x, y, pressure)]
+        if (root.readerMarkerTool === "free") {
+            readerInkPersistTimer.stop()
+            var freePoint = root.freeNotePointFromStylus(x, y, pressure)
+            root.currentFreeNotePoints = [freePoint]
+            readerInkCanvas.beginStroke(freePoint.x, freePoint.y, root.readerMarkerColor, 4, 1, true)
+        } else {
+            var markerPoint = root.markerPointFromStylus(x, y, pressure)
+            root.currentStrokePoints = [markerPoint]
+            readerInkCanvas.beginStroke(markerPoint.x, markerPoint.y,
+                                        root.readerMarkerTool === "eraser" ? root.inkColor : root.readerMarkerColor,
+                                        root.readerMarkerTool === "eraser" ? 10 : root.readerMarkerLineWidth,
+                                        root.readerMarkerTool === "eraser" ? 0.82 : 0.42,
+                                        root.readerMarkerTool !== "eraser")
+        }
     }
 
     function appendStylusStroke(x, y, pressure) {
-        if (root.readerStylusStrokeInToolbar || !root.annotationMode || root.currentStrokePoints.length < 1) {
+        var points = root.readerMarkerTool === "free" ? root.currentFreeNotePoints : root.currentStrokePoints
+        if (root.readerStylusStrokeInToolbar || !root.annotationMode || points.length < 1) {
             return
         }
-        var point = root.markerPointFromStylus(x, y, pressure)
-        var points = root.currentStrokePoints.slice()
+        var point = root.readerMarkerTool === "free" ? root.freeNotePointFromStylus(x, y, pressure) : root.markerPointFromStylus(x, y, pressure)
         var last = points[points.length - 1]
-        if (Math.abs((last.x || 0) - point.x) + Math.abs((last.y || 0) - point.y) < 6) {
+        if (Math.abs((last.x || 0) - point.x) + Math.abs((last.y || 0) - point.y) < 1) {
             return
         }
         points.push(point)
-        root.currentStrokePoints = points
+        readerInkCanvas.appendPoint(point.x, point.y)
     }
 
     function endStylusStroke(x, y, pressure) {
@@ -2204,11 +2392,128 @@ Window {
             root.readerStylusStrokeInToolbar = false
             return
         }
-        if (!root.annotationMode || root.currentStrokePoints.length < 1) {
+        var points = root.readerMarkerTool === "free" ? root.currentFreeNotePoints : root.currentStrokePoints
+        if (!root.annotationMode || points.length < 1) {
             return
         }
         root.appendStylusStroke(x, y, pressure)
+        if (root.readerMarkerTool === "free") {
+            root.saveCurrentFreeInkStroke()
+            readerInkCanvas.finishStroke()
+            return
+        }
         root.saveCurrentStroke()
+        readerInkCanvas.finishStroke()
+    }
+
+    function saveCurrentFreeInkStroke() {
+        var points = (root.currentFreeNotePoints || []).slice()
+        if (points.length >= 2 && root.currentBookId !== "") {
+            var count = root.readerPageCountFor(readerStore.bodyText, root.readerTextTopY())
+            if (root.pendingFreeInkBookId !== ""
+                    && (root.pendingFreeInkBookId !== root.currentBookId
+                        || root.pendingFreeInkPageIndex !== root.pageIndex)) {
+                root.flushPendingFreeInkStrokes()
+            }
+            root.pendingFreeInkBookId = root.currentBookId
+            root.pendingFreeInkTitle = readerStore.title
+            root.pendingFreeInkPageIndex = root.pageIndex
+            root.pendingFreeInkPageCount = count
+            root.pendingFreeInkSequence += 1
+            root.pendingFreeInkStrokes = (root.pendingFreeInkStrokes || []).concat([{
+                "clientStrokeId": "pending-" + Date.now() + "-" + root.pendingFreeInkSequence,
+                "colorName": root.readerMarkerColorName,
+                "colorValue": root.readerMarkerColor,
+                "points": points,
+                "tool": "free",
+                "lineWidth": 4
+            }])
+            readerInkPersistTimer.restart()
+        }
+        root.currentFreeNotePoints = []
+        root.currentFreeNoteStrokes = []
+    }
+
+    function readerVisibleInkStrokes() {
+        var strokes = (readerStore.pageStrokes || []).slice()
+        if (root.pendingFreeInkBookId === root.currentBookId
+                && root.pendingFreeInkPageIndex === root.pageIndex) {
+            var persistedIds = ({})
+            for (var index = 0; index < strokes.length; ++index) {
+                var persistedId = String((strokes[index] || {}).clientStrokeId || "")
+                if (persistedId !== "") {
+                    persistedIds[persistedId] = true
+                }
+            }
+            var pending = root.pendingFreeInkStrokes || []
+            for (var pendingIndex = 0; pendingIndex < pending.length; ++pendingIndex) {
+                var pendingStroke = pending[pendingIndex] || ({})
+                var pendingId = String(pendingStroke.clientStrokeId || "")
+                if (pendingId === "" || !persistedIds[pendingId]) {
+                    strokes.push(pendingStroke)
+                }
+            }
+        }
+        return strokes
+    }
+
+    function flushPendingFreeInkStrokes() {
+        var strokes = (root.pendingFreeInkStrokes || []).slice()
+        if (strokes.length < 1 || root.pendingFreeInkBookId === "") {
+            return
+        }
+        readerInkPersistTimer.stop()
+        readerStore.addPageStrokesBatch(root.pendingFreeInkBookId, root.pendingFreeInkTitle,
+                                        root.pendingFreeInkPageIndex, root.pendingFreeInkPageCount,
+                                        strokes)
+        root.pendingFreeInkStrokes = []
+        root.pendingFreeInkBookId = ""
+        root.pendingFreeInkTitle = ""
+        root.pendingFreeInkPageIndex = -1
+        root.pendingFreeInkPageCount = 1
+    }
+
+    function readerParagraphNotePlacements() {
+        var placements = ({})
+        var nextY = root.currentReaderTextTopY
+        var notes = readerStore.paragraphNotes || []
+        for (var index = 0; index < notes.length; index++) {
+            var note = notes[index] || ({})
+            var noteId = String(note.noteId || "")
+            var anchor = note.anchor || ({})
+            var fallback = note.fallback || ({})
+            var isParagraph = anchor.kind === "paragraph"
+                && Number(anchor.textEnd) > root.currentReaderTextStart
+                && Number(anchor.textStart) < root.currentReaderTextEnd
+            var isPageFree = anchor.kind === "page-free"
+                && Number(fallback.pageIndex) === root.pageIndex
+            if (!isParagraph && !isPageFree) {
+                continue
+            }
+            var desiredY = root.currentReaderTextTopY
+            if (isParagraph) {
+                var rects = root.readerRenderedRectsForTextRange(anchor.textStart, anchor.textEnd)
+                if (rects.length > 0) {
+                    desiredY = rects[0].lineTop
+                }
+            } else {
+                desiredY = root.clamp(Math.round(Number(fallback.y) * root.height), root.currentReaderTextTopY, root.readerFooterTop - 84)
+            }
+            var y = Math.max(desiredY, nextY)
+            if (y > root.readerFooterTop - 78) {
+                y = Math.max(root.currentReaderTextTopY, root.readerFooterTop - 78)
+            }
+            placements[noteId] = ({
+                "visible": true,
+                "x": isParagraph ? root.readerTextRight() + 10 : root.clamp(Math.round(Number(fallback.x) * root.width), root.readerMargin, root.width - 154),
+                "y": y,
+                "width": isParagraph ? Math.max(110, root.readerNotesGutterWidth - 18) : 144,
+                "height": 70,
+                "kind": isParagraph ? "paragraph" : "page-free"
+            })
+            nextY = y + 78
+        }
+        return placements
     }
 
     function readerTextOffsetForPoint(point) {
@@ -2233,7 +2538,7 @@ Window {
         var linePx = Math.max(1, root.readerEstimatedLinePixels())
         var line = Math.max(0, Math.floor((y - root.currentReaderTextTopY) / linePx))
         var charsPerLine = Math.max(1, root.readerEstimatedCharsPerLine())
-        var textWidth = Math.max(1, root.width - root.readerMargin * 2)
+        var textWidth = Math.max(1, root.readerTextWidth())
         var xRatio = root.clamp((x - root.readerMargin) / textWidth, 0, 1)
         var charInLine = Math.floor(xRatio * charsPerLine)
         return root.clamp(root.currentReaderTextStart + line * charsPerLine + charInLine,
@@ -2272,7 +2577,6 @@ Window {
         var excerpt = String(readerStore.bodyText || "").slice(range.start, range.end).replace(/\s+/g, " ").trim().slice(0, 36)
         readerStore.addTextHighlight(root.currentBookId, readerStore.title, root.pageIndex, count, range.start, range.end, root.readerMarkerColorName, root.readerMarkerColor, excerpt)
         root.currentStrokePoints = []
-        root.forceReaderRefresh += 1
     }
 
     function eraseCurrentMarkerSelection() {
@@ -2287,7 +2591,6 @@ Window {
         }
         readerStore.clearTextHighlightsInRange(root.currentBookId, range.start, range.end)
         root.currentStrokePoints = []
-        root.forceReaderRefresh += 1
     }
 
     function currentReaderProgressPercent() {
@@ -2401,6 +2704,18 @@ Window {
         }
         console.log("settings-panel-selftest=ok")
         appControl.quitToSystem()
+    }
+
+    function runOcrSetupSelfTest() {
+        ocrSetupServer.start()
+        ocrSetupSelfTestTimer.attempts = 0
+        ocrSetupSelfTestTimer.start()
+    }
+
+    function runOcrNetworkSelfTest() {
+        ocrStore.runConnectionSelfTest()
+        ocrNetworkSelfTestTimer.attempts = 0
+        ocrNetworkSelfTestTimer.start()
     }
 
     function selfTestBook() {
@@ -2928,6 +3243,85 @@ Window {
     }
 
     Timer {
+        id: ocrSetupSelfTestStartTimer
+        interval: 250
+        running: selfTestMode === "ocr-setup"
+        repeat: false
+        onTriggered: root.runOcrSetupSelfTest()
+    }
+
+    Timer {
+        interval: 250
+        running: selfTestMode === "ocr-network"
+        repeat: false
+        onTriggered: root.runOcrNetworkSelfTest()
+    }
+
+    Timer {
+        interval: 250
+        running: selfTestMode === "ocr-storage"
+        repeat: false
+        onTriggered: {
+            ocrStore.runStorageSelfTest()
+            var passed = String(ocrStore.status || "").indexOf("自检通过") >= 0
+            console.log("ocr-storage-selftest=" + (passed ? "ok" : "fail") + " status=" + String(ocrStore.status || ""))
+            appControl.quitToSystem()
+        }
+    }
+
+    Timer {
+        id: ocrNetworkSelfTestTimer
+        property int attempts: 0
+        interval: 400
+        repeat: true
+        onTriggered: {
+            attempts += 1
+            if (!ocrStore.busy) {
+                var passed = String(ocrStore.status || "").indexOf("网络连接正常") >= 0
+                console.log("ocr-network-selftest=" + (passed ? "ok" : "fail") + " status=" + String(ocrStore.status || ""))
+                stop()
+                appControl.quitToSystem()
+                return
+            }
+            // The device's TLS handshake may take longer than a normal UI
+            // interaction.  Keep this diagnostic alive beyond the 15-second
+            // request timeout so it can report a meaningful result.
+            if (attempts >= 80) {
+                console.log("ocr-network-selftest=fail")
+                stop()
+                appControl.quitToSystem()
+            }
+        }
+    }
+
+    Timer {
+        id: ocrSetupSelfTestTimer
+        property int attempts: 0
+        interval: 400
+        repeat: true
+        onTriggered: {
+            attempts += 1
+            var ready = ocrSetupServer.running
+                && String(ocrSetupServer.setupUrl || "").indexOf("https://") === 0
+                && String(ocrSetupServer.pairingCode || "").length === 6
+                && ocrSetupServer.secondsRemaining > 0
+            if (ready) {
+                console.log("ocr-setup-selftest=ok")
+                ocrSetupServer.cancel()
+                stop()
+                appControl.quitToSystem()
+                return
+            }
+            if (attempts >= 25) {
+                console.log("ocr-setup-selftest=fail")
+                ocrSetupServer.cancel()
+                stop()
+                appControl.quitToSystem()
+            }
+        }
+    }
+
+    Timer {
         interval: 250
         running: selfTestMode === "reader-open"
         repeat: false
@@ -3070,6 +3464,13 @@ Window {
 
     function openSoftKeyboard(target) {
         keyboardTarget = target
+        var isPassword = target && target.echoMode === TextInput.Password
+        keyboardPinyinMode = !isPassword
+        keyboardHandwritingMode = false
+        keyboardPinyinBuffer = ""
+        keyboardCandidates = []
+        keyboardCandidatePage = 0
+        keyboardClearHandwriting()
         showSoftKeyboard = true
         if (keyboardTarget && keyboardTarget.forceActiveFocus) {
             keyboardTarget.forceActiveFocus()
@@ -3079,6 +3480,371 @@ Window {
     function closeSoftKeyboard() {
         showSoftKeyboard = false
         keyboardTarget = null
+        keyboardPinyinBuffer = ""
+        keyboardCandidates = []
+        keyboardCandidatePage = 0
+        keyboardClearHandwriting()
+    }
+
+    function beginReaderInkBlockOcrSelection() {
+        root.readerSelectedInkBlockId = ""
+        root.readerOcrBlockSelection = (readerStore.pageInkBlocks || []).length > 0
+        root.readerStylusToolsExpanded = false
+        root.readerStylusCollapsePending = false
+        root.readerSuppressPageTurnUntilMs = Date.now() + 500
+    }
+
+    function selectReaderInkBlock(block) {
+        if (!block || !block.blockId || Date.now() < root.readerSuppressPageTurnUntilMs) {
+            return
+        }
+        root.readerOcrBlockSelection = false
+        root.readerSelectedInkBlockId = String(block.blockId)
+    }
+
+    function selectedReaderInkBlock() {
+        var blocks = readerStore.pageInkBlocks || []
+        for (var index = 0; index < blocks.length; ++index) {
+            var block = blocks[index] || ({})
+            if (String(block.blockId || "") === root.readerSelectedInkBlockId) {
+                return block
+            }
+        }
+        return ({})
+    }
+
+    function deleteSelectedReaderInkBlock() {
+        if (root.readerSelectedInkBlockId === "") {
+            return
+        }
+        readerStore.removePageInkBlock(root.currentBookId, root.pageIndex,
+                                       root.readerSelectedInkBlockId)
+        root.readerSelectedInkBlockId = ""
+    }
+
+    function readerInkBlockAt(x, y) {
+        var blocks = readerStore.pageInkBlocks || []
+        for (var index = blocks.length - 1; index >= 0; --index) {
+            var block = blocks[index] || ({})
+            var padding = 18
+            if (x >= Number(block.x || 0) - padding
+                    && x <= Number(block.x || 0) + Number(block.width || 0) + padding
+                    && y >= Number(block.y || 0) - padding
+                    && y <= Number(block.y || 0) + Number(block.height || 0) + padding) {
+                return block
+            }
+        }
+        return ({})
+    }
+
+    function beginDirectHandwritingOcr(kind, itemId, strokes, pageIndex) {
+        if (ocrStore.busy || root.pendingDirectOcrKind !== "") {
+            if (kind === "keyboard") {
+                root.keyboardHandwritingStatus = "正在识别上一组笔迹…"
+            } else {
+                root.showReaderOcrStatus("正在识别上一块笔迹…", false)
+            }
+            return
+        }
+        if (!ocrStore.configured) {
+            if (kind === "keyboard") {
+                root.keyboardHandwritingStatus = "请先到“我的”配置百度 OCR"
+            } else {
+                root.showReaderOcrStatus("请先到“我的”配置百度 OCR", true)
+            }
+            return
+        }
+        if (!strokes || strokes.length === 0) {
+            if (kind === "keyboard") {
+                root.keyboardHandwritingStatus = "请先在书写区写字"
+            } else {
+                root.showReaderOcrStatus("这块笔迹为空，无法识别", true)
+            }
+            return
+        }
+        root.pendingDirectOcrKind = String(kind || "")
+        root.pendingDirectOcrBookId = root.currentBookId
+        root.pendingDirectOcrPageIndex = Math.max(0, Math.floor(Number(pageIndex) || 0))
+        root.pendingDirectOcrItemId = String(itemId || "")
+        root.readerOcrBlockSelection = false
+        root.readerSuppressPageTurnUntilMs = Date.now() + 700
+        if (kind === "keyboard") {
+            root.keyboardHandwritingStatus = "正在识别…"
+            root.keyboardHandwritingCandidates = []
+        } else {
+            root.showReaderOcrStatus("正在识别…", false)
+        }
+        ocrStore.clearCandidates()
+        ocrStore.recognizeStrokeBlock(strokes)
+    }
+
+    function recognizeReaderInkBlock(block) {
+        if (!block || !block.blockId) {
+            return
+        }
+        root.readerSelectedInkBlockId = String(block.blockId)
+        root.beginDirectHandwritingOcr("block", String(block.blockId),
+                                       block.strokes || [], root.pageIndex)
+    }
+
+    function recognizeParagraphNote(note) {
+        if (!note || !note.noteId) {
+            return
+        }
+        root.beginDirectHandwritingOcr("note", String(note.noteId),
+                                       note.strokes || (note.points ? [note.points] : []),
+                                       root.pageIndex)
+    }
+
+    function showReaderOcrStatus(message, autoHide) {
+        root.readerInlineOcrStatus = String(message || "")
+        readerInlineOcrStatusTimer.stop()
+        if (autoHide && root.readerInlineOcrStatus !== "") {
+            readerInlineOcrStatusTimer.start()
+        }
+    }
+
+    function finishDirectHandwritingOcr(succeeded) {
+        if (root.pendingDirectOcrKind === "") {
+            return
+        }
+        var result = ""
+        if (succeeded && ocrStore.candidates && ocrStore.candidates.length > 0) {
+            result = ocrStore.candidates.join(" ").trim()
+        }
+        if (root.pendingDirectOcrKind === "keyboard") {
+            if (succeeded && ocrStore.candidates && ocrStore.candidates.length > 0) {
+                root.keyboardHandwritingCandidates = ocrStore.candidates.slice()
+                root.keyboardCandidatePage = 0
+                root.keyboardHandwritingStatus = "点上方结果即可输入"
+            } else {
+                root.keyboardHandwritingCandidates = []
+                root.keyboardCandidatePage = 0
+                root.keyboardHandwritingStatus = ocrStore.status || "没有识别到文字"
+            }
+        } else if (result !== "") {
+            if (root.pendingDirectOcrKind === "block") {
+                readerStore.setPageInkBlockOcrText(root.pendingDirectOcrBookId,
+                                                   root.pendingDirectOcrPageIndex,
+                                                   root.pendingDirectOcrItemId, result)
+                root.readerSelectedInkBlockId = ""
+            } else if (root.pendingDirectOcrKind === "note") {
+                readerStore.setParagraphNoteOcrText(root.pendingDirectOcrBookId,
+                                                    root.pendingDirectOcrItemId, result)
+            }
+            root.showReaderOcrStatus("识别完成，文字已附在笔迹旁", true)
+        } else {
+            root.showReaderOcrStatus(ocrStore.status || "没有识别到文字", true)
+        }
+        root.pendingDirectOcrKind = ""
+        root.pendingDirectOcrBookId = ""
+        root.pendingDirectOcrPageIndex = -1
+        root.pendingDirectOcrItemId = ""
+        Qt.callLater(function() { ocrStore.clearCandidates() })
+    }
+
+    Connections {
+        target: ocrStore
+        function onHandwritingRecognitionFinished(succeeded) {
+            root.finishDirectHandwritingOcr(succeeded)
+        }
+    }
+
+    Timer {
+        id: readerInlineOcrStatusTimer
+        interval: 2600
+        repeat: false
+        onTriggered: root.readerInlineOcrStatus = ""
+    }
+
+    function refreshKeyboardCandidates() {
+        keyboardCandidatePage = 0
+        keyboardCandidates = keyboardPinyinMode && !keyboardHandwritingMode
+            ? PinyinEngine.candidates(keyboardPinyinBuffer, 50)
+            : []
+    }
+
+    function keyboardActiveCandidateCount() {
+        if (root.keyboardHandwritingMode) {
+            return root.keyboardHandwritingCandidates.length
+        }
+        if (root.keyboardPinyinMode) {
+            return root.keyboardCandidates.length
+        }
+        return 0
+    }
+
+    function keyboardCandidatePageCount() {
+        return Math.max(1, Math.ceil(root.keyboardActiveCandidateCount()
+                                     / root.keyboardCandidatePageSize))
+    }
+
+    function keyboardPagedPinyinCandidates() {
+        var start = root.keyboardCandidatePage * root.keyboardCandidatePageSize
+        return root.keyboardCandidates.slice(start, start + root.keyboardCandidatePageSize)
+    }
+
+    function keyboardPagedHandwritingCandidates() {
+        var start = root.keyboardCandidatePage * root.keyboardCandidatePageSize
+        return root.keyboardHandwritingCandidates.slice(start, start + root.keyboardCandidatePageSize)
+    }
+
+    function keyboardChangeCandidatePage(delta) {
+        var lastPage = root.keyboardCandidatePageCount() - 1
+        root.keyboardCandidatePage = root.clamp(root.keyboardCandidatePage + delta, 0, lastPage)
+    }
+
+    function setKeyboardInputMode(mode) {
+        var nextMode = String(mode || "pinyin")
+        if (keyboardTarget && keyboardTarget.echoMode === TextInput.Password
+                && nextMode !== "english") {
+            nextMode = "english"
+        }
+        keyboardPinyinMode = nextMode === "pinyin"
+        keyboardHandwritingMode = nextMode === "handwriting"
+        keyboardPinyinBuffer = ""
+        refreshKeyboardCandidates()
+        if (!keyboardHandwritingMode) {
+            keyboardClearHandwriting()
+        } else if (!ocrStore.configured) {
+            keyboardHandwritingStatus = "需联网使用百度 OCR"
+        } else {
+            keyboardHandwritingStatus = "写完后点“识别”"
+        }
+    }
+
+    function keyboardHandwritingStoredStrokes() {
+        var stored = []
+        for (var index = 0; index < root.keyboardHandwritingStrokes.length; ++index) {
+            stored.push({
+                "tool": "free",
+                "colorValue": "#111111",
+                "lineWidth": 5,
+                "points": root.keyboardHandwritingStrokes[index]
+            })
+        }
+        return stored
+    }
+
+    function keyboardHandwritingPoint(x, y) {
+        var local = keyboardHandwritingPad.mapFromItem(root.contentItem,
+                                                       Number(x) || 0,
+                                                       Number(y) || 0)
+        return ({
+            "x": root.clamp(local.x, 3, Math.max(3, keyboardHandwritingPad.width - 3)),
+            "y": root.clamp(local.y, 3, Math.max(3, keyboardHandwritingPad.height - 3))
+        })
+    }
+
+    function keyboardHandwritingContains(x, y) {
+        var local = keyboardHandwritingPad.mapFromItem(root.contentItem,
+                                                       Number(x) || 0,
+                                                       Number(y) || 0)
+        return local.x >= 0 && local.x <= keyboardHandwritingPad.width
+            && local.y >= 0 && local.y <= keyboardHandwritingPad.height
+    }
+
+    function beginKeyboardHandwritingStroke(x, y) {
+        if (!root.showSoftKeyboard || !root.keyboardHandwritingMode
+                || !root.keyboardHandwritingContains(x, y)) {
+            return false
+        }
+        var point = root.keyboardHandwritingPoint(x, y)
+        root.keyboardHandwritingDrawing = true
+        root.keyboardHandwritingCurrentStroke = [point]
+        root.keyboardHandwritingCandidates = []
+        root.keyboardHandwritingStatus = "书写中…"
+        keyboardHandwritingInk.beginStroke(point.x, point.y, "#111111", 5, 1, true)
+        return true
+    }
+
+    function appendKeyboardHandwritingStroke(x, y) {
+        if (!root.keyboardHandwritingDrawing || root.keyboardHandwritingCurrentStroke.length === 0) {
+            return false
+        }
+        var point = root.keyboardHandwritingPoint(x, y)
+        var points = root.keyboardHandwritingCurrentStroke
+        var last = points[points.length - 1]
+        if (Math.abs(last.x - point.x) + Math.abs(last.y - point.y) < 1) {
+            return true
+        }
+        root.keyboardHandwritingCurrentStroke = points.concat([point])
+        keyboardHandwritingInk.appendPoint(point.x, point.y)
+        return true
+    }
+
+    function endKeyboardHandwritingStroke(x, y) {
+        if (!root.keyboardHandwritingDrawing) {
+            return false
+        }
+        root.appendKeyboardHandwritingStroke(x, y)
+        if (root.keyboardHandwritingCurrentStroke.length > 0) {
+            root.keyboardHandwritingStrokes = root.keyboardHandwritingStrokes.concat([
+                root.keyboardHandwritingCurrentStroke.slice()
+            ])
+        }
+        root.keyboardHandwritingCurrentStroke = []
+        root.keyboardHandwritingDrawing = false
+        root.keyboardHandwritingStatus = "继续写，写完后点“识别”"
+        keyboardHandwritingInk.finishStroke()
+        return true
+    }
+
+    function cancelKeyboardHandwritingStroke() {
+        if (!root.keyboardHandwritingDrawing) {
+            return
+        }
+        if (root.keyboardHandwritingCurrentStroke.length > 0) {
+            root.keyboardHandwritingStrokes = root.keyboardHandwritingStrokes.concat([
+                root.keyboardHandwritingCurrentStroke.slice()
+            ])
+        }
+        root.keyboardHandwritingCurrentStroke = []
+        root.keyboardHandwritingDrawing = false
+        root.keyboardHandwritingStatus = "继续写，写完后点“识别”"
+        keyboardHandwritingInk.finishStroke()
+    }
+
+    function keyboardClearHandwriting() {
+        root.keyboardHandwritingStrokes = []
+        root.keyboardHandwritingCurrentStroke = []
+        root.keyboardHandwritingCandidates = []
+        root.keyboardCandidatePage = 0
+        root.keyboardHandwritingStatus = ""
+        root.keyboardHandwritingDrawing = false
+        if (keyboardHandwritingInk) {
+            keyboardHandwritingInk.clearLive()
+        }
+    }
+
+    function keyboardUndoHandwritingStroke() {
+        if (root.keyboardHandwritingStrokes.length === 0) {
+            root.keyboardHandwritingStatus = "没有可撤销的笔画"
+            return
+        }
+        keyboardHandwritingInk.clearLive()
+        root.keyboardHandwritingStrokes = root.keyboardHandwritingStrokes.slice(
+            0, root.keyboardHandwritingStrokes.length - 1)
+        root.keyboardHandwritingCandidates = []
+        root.keyboardCandidatePage = 0
+        root.keyboardHandwritingStatus = root.keyboardHandwritingStrokes.length > 0
+            ? "已撤销上一笔"
+            : "书写区已清空"
+    }
+
+    function keyboardRecognizeHandwriting() {
+        root.beginDirectHandwritingOcr("keyboard", "",
+                                       root.keyboardHandwritingStrokes, 0)
+    }
+
+    function keyboardChooseHandwritingCandidate(candidate) {
+        var text = String(candidate || "").trim()
+        if (text === "") {
+            return
+        }
+        root.keyboardInsert(text)
+        root.keyboardClearHandwriting()
+        root.keyboardHandwritingStatus = "已输入，可继续书写"
     }
 
     function keyboardInsert(value) {
@@ -3093,7 +3859,32 @@ Window {
         keyboardTarget.cursorPosition = cursor + textValue.length
     }
 
+    function keyboardTypeKey(value) {
+        var textValue = String(value || "")
+        if (keyboardPinyinMode && !keyboardHandwritingMode && /^[a-z]$/.test(textValue)) {
+            keyboardPinyinBuffer += textValue
+            refreshKeyboardCandidates()
+            return
+        }
+        keyboardInsert(textValue)
+    }
+
+    function keyboardChooseCandidate(candidate) {
+        if (!candidate || !candidate.text) {
+            return
+        }
+        keyboardInsert(candidate.text)
+        var consume = Math.max(0, Math.floor(Number(candidate.consume) || 0))
+        keyboardPinyinBuffer = keyboardPinyinBuffer.slice(consume)
+        refreshKeyboardCandidates()
+    }
+
     function keyboardBackspace() {
+        if (keyboardPinyinMode && !keyboardHandwritingMode && keyboardPinyinBuffer.length > 0) {
+            keyboardPinyinBuffer = keyboardPinyinBuffer.slice(0, -1)
+            refreshKeyboardCandidates()
+            return
+        }
         if (!keyboardTarget) {
             return
         }
@@ -3108,6 +3899,12 @@ Window {
     }
 
     function keyboardSubmit() {
+        if (keyboardPinyinMode && !keyboardHandwritingMode && keyboardCandidates.length > 0) {
+            keyboardChooseCandidate(keyboardCandidates[0])
+            if (keyboardPinyinBuffer.length > 0) {
+                return
+            }
+        }
         if (keyboardTarget === discoverSearchInput) {
             discoverStore.search(discoverSearchInput.text)
         }
@@ -3307,7 +4104,11 @@ Window {
     }
 
     function setReaderPage(value) {
+        root.flushPendingFreeInkStrokes()
         root.closeReaderSocialPopup()
+        root.readerOcrBlockSelection = false
+        root.readerSelectedInkBlockId = ""
+        readerInkCanvas.clearLive()
         var count = root.readerPageCountFor(readerStore.bodyText, root.readerTextTopY())
         if (Number(value) < 0 && root.currentReaderTextStart > 0) {
             root.rebuildReaderPaginationWindowBackward()
@@ -3685,7 +4486,9 @@ Window {
     Binding {
         target: stylusStore
         property: "active"
-        value: root.screenName === "reader" && !root.sleepOverlayVisible
+        value: !root.sleepOverlayVisible
+            && (root.screenName === "reader"
+                || root.showSoftKeyboard)
     }
 
     Timer {
@@ -3698,16 +4501,24 @@ Window {
     Connections {
         target: stylusStore
         function onStylusPressed(x, y, pressure) {
-            root.beginStylusStroke(x, y, pressure)
+            if (!root.beginKeyboardHandwritingStroke(x, y)) {
+                root.beginStylusStroke(x, y, pressure)
+            }
         }
         function onStylusMoved(x, y, pressure) {
-            root.appendStylusStroke(x, y, pressure)
+            if (!root.appendKeyboardHandwritingStroke(x, y)) {
+                root.appendStylusStroke(x, y, pressure)
+            }
         }
         function onStylusReleased(x, y, pressure) {
-            root.endStylusStroke(x, y, pressure)
+            if (!root.endKeyboardHandwritingStroke(x, y)) {
+                root.endStylusStroke(x, y, pressure)
+            }
         }
         function onStylusTapped(x, y) {
-            root.handleStylusTap(x, y)
+            if (!root.showSoftKeyboard || !root.keyboardHandwritingMode) {
+                root.handleStylusTap(x, y)
+            }
         }
     }
 
@@ -3718,7 +4529,15 @@ Window {
         onTriggered: {
             root.readerStylusToolsExpanded = false
             root.readerStylusCollapsePending = false
-            root.forceReaderRefresh += 1
+        }
+    }
+
+    Timer {
+        id: readerClearConfirmTimer
+        interval: 2600
+        repeat: false
+        onTriggered: {
+            root.readerClearArmed = false
         }
     }
 
@@ -4228,6 +5047,31 @@ Window {
                         }
                     }
 
+                    Rectangle {
+                        width: parent.width
+                        height: 56
+                        radius: 4
+                        color: root.surfaceColor
+                        border.color: root.inkColor
+                        border.width: 2
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "手写识别后搜索"
+                            color: root.inkColor
+                            font.pixelSize: 20
+                            font.bold: true
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                root.openSoftKeyboard(discoverSearchInput)
+                                root.setKeyboardInputMode("handwriting")
+                            }
+                        }
+                    }
+
                     Column {
                         width: parent.width
                         spacing: 10
@@ -4699,6 +5543,119 @@ Window {
                             enabled: !accountStore.running && !accountStore.loginRunning && !accountStore.renewingCookie
                             onClicked: accountStore.logout()
                         }
+                    }
+
+                    Text {
+                        width: parent.width
+                        height: 44
+                        text: "百度 OCR（云端）"
+                        color: root.inkColor
+                        font.pixelSize: 28
+                        font.bold: true
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: ocrStore.status
+                        color: root.inkColor
+                        font.pixelSize: 20
+                        font.bold: true
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 64
+                        radius: 4
+                        color: ocrSetupServer.running ? root.surfaceColor : root.brandGreenDark
+                        border.color: root.inkColor
+                        border.width: 2
+
+                        Text {
+                            anchors.fill: parent
+                            text: ocrSetupServer.running ? "浏览器配置服务已开启" : "开启浏览器配置"
+                            color: ocrSetupServer.running ? root.inkColor : "#ffffff"
+                            font.pixelSize: 23
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: !ocrSetupServer.running && !ocrStore.busy
+                            onClicked: ocrSetupServer.start()
+                        }
+                    }
+
+                    Column {
+                        width: parent.width
+                        spacing: 8
+                        visible: ocrSetupServer.running
+
+                        Text {
+                            width: parent.width
+                            text: "浏览器地址：" + ocrSetupServer.setupUrl
+                            color: root.inkColor
+                            font.pixelSize: 19
+                            font.bold: true
+                            wrapMode: Text.WrapAnywhere
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: "配对码：" + ocrSetupServer.pairingCode
+                            color: root.inkColor
+                            font.pixelSize: 28
+                            font.bold: true
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: "本次配置将在 " + ocrSetupServer.secondsRemaining + " 秒后自动关闭"
+                            color: root.inkColor
+                            font.pixelSize: 19
+                        }
+
+                        Text {
+                            width: parent.width
+                            text: ocrSetupServer.status
+                            color: root.inkColor
+                            font.pixelSize: 19
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 56
+                            radius: 4
+                            color: root.surfaceColor
+                            border.color: root.inkColor
+                            border.width: 2
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "关闭浏览器配置"
+                                color: root.inkColor
+                                font.pixelSize: 21
+                                font.bold: true
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: ocrSetupServer.cancel()
+                            }
+                        }
+                    }
+
+                    Text {
+                        width: parent.width
+                        visible: !ocrSetupServer.running
+                        text: "只在你点开启后临时运行。浏览器首次会提示临时安全证书；API Key 不会显示在设备或日志中。"
+                        color: root.inkColor
+                        font.pixelSize: 18
+                        wrapMode: Text.WordWrap
                     }
 
                     Text {
@@ -6435,7 +7392,7 @@ Window {
             x: root.readerMargin
             y: root.currentReaderTextTopY
             z: 2
-            width: root.width - root.readerMargin * 2
+            width: root.readerTextWidth()
             height: root.readerBodyHeight(root.currentReaderTextTopY)
             text: root.formatReaderText(root.currentReaderPageText, root.currentReaderTextStart, root.currentReaderTextEnd) + "<!--" + root.forceReaderRefresh + "-->"
             textFormat: TextEdit.RichText
@@ -6450,13 +7407,14 @@ Window {
             cursorVisible: false
             focus: false
             wrapMode: TextEdit.Wrap
+            clip: true
             onLinkActivated: root.handleReaderLink(link)
         }
 
         Rectangle {
             x: root.readerMargin
             y: root.readerFooterTop
-            width: root.width - root.readerMargin * 2
+            width: root.readerTextWidth()
             height: 1
             z: 3
             color: root.inkColor
@@ -6760,73 +7718,329 @@ Window {
         Item {
             id: readerInkLayer
             anchors.fill: parent
-            z: 5
+            z: 8
             visible: root.screenName === "reader"
 
+            InkCanvas {
+                id: readerInkCanvas
+                anchors.fill: parent
+                strokes: root.readerVisibleInkStrokes()
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                visible: root.readerOcrBlockSelection
+                z: 3
+                onClicked: {
+                    root.readerOcrBlockSelection = false
+                    root.readerSuppressPageTurnUntilMs = Date.now() + 500
+                }
+            }
+
             Repeater {
-                model: readerStore.pageStrokes
+                model: readerStore.pageInkBlocks
 
                 Item {
-                    property var stroke: modelData
+                    property var inkBlock: modelData || ({})
                     anchors.fill: parent
 
-                    Canvas {
+                    MouseArea {
+                        x: Math.max(8, Number(inkBlock.x || 0) - 18)
+                        y: Math.max(root.readerTextTopMargin, Number(inkBlock.y || 0) - 18)
+                        width: Math.min(root.width - x - 8, Number(inkBlock.width || 1) + 36)
+                        height: Math.min(root.readerContentBottom - y, Number(inkBlock.height || 1) + 36)
+                        enabled: !root.readerOcrBlockSelection
+                        z: 1
+                        onClicked: root.selectReaderInkBlock(inkBlock)
+                    }
+
+                    Rectangle {
+                        x: Math.max(8, Number(inkBlock.x || 0) - 14)
+                        y: Math.max(root.readerTextTopMargin, Number(inkBlock.y || 0) - 14)
+                        width: Math.min(root.width - x - 8, Number(inkBlock.width || 1) + 28)
+                        height: Math.min(root.readerContentBottom - y, Number(inkBlock.height || 1) + 28)
+                        visible: root.readerOcrBlockSelection
+                                 || root.readerSelectedInkBlockId === String(inkBlock.blockId || "")
+                        radius: 6
+                        color: "transparent"
+                        border.color: root.brandGreenDark
+                        border.width: 3
+                        z: 4
+
+                        Text {
+                            x: 5
+                            y: -28
+                            height: 26
+                            text: root.readerOcrBlockSelection ? "点此识别" : "已选中"
+                            color: root.brandGreenDark
+                            font.pixelSize: 17
+                            font.bold: true
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: root.recognizeReaderInkBlock(inkBlock)
+                        }
+                    }
+
+                    Rectangle {
+                        visible: !!inkBlock.ocrText && !root.readerOcrBlockSelection
+                        x: root.clamp(Number(inkBlock.x || 0), 18, root.width - 378)
+                        y: root.clamp(Number(inkBlock.y || 0) + Number(inkBlock.height || 0) + 10,
+                                      root.readerTextTopMargin, root.readerContentBottom - 54)
+                        width: Math.min(360, root.width - x - 18)
+                        height: 46
+                        radius: 7
+                        color: root.paperColor
+                        border.color: root.readerMarkerColor
+                        border.width: 2
+                        z: 2
+
+                        Text {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            text: "识别：" + (inkBlock.ocrText || "")
+                            color: root.inkColor
+                            font.pixelSize: 18
+                            font.bold: true
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: root.recognizeReaderInkBlock(inkBlock)
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                id: readerInkBlockActions
+                property var inkBlock: root.selectedReaderInkBlock()
+                visible: !!inkBlock.blockId
+                x: root.clamp(Number(inkBlock.x || 0), 18, root.width - width - 18)
+                y: {
+                    var above = Number(inkBlock.y || 0) - height - 18
+                    if (above >= root.readerTextTopMargin) {
+                        return above
+                    }
+                    return root.clamp(Number(inkBlock.y || 0) + Number(inkBlock.height || 0) + 18,
+                                      root.readerTextTopMargin, root.readerContentBottom - height)
+                }
+                width: 318
+                height: 58
+                radius: 10
+                color: root.paperColor
+                border.color: root.inkColor
+                border.width: 2
+                z: 6
+
+                Row {
+                    anchors.fill: parent
+
+                    Repeater {
+                        model: [
+                            {"label": "识别", "action": "ocr"},
+                            {"label": "删除", "action": "delete"},
+                            {"label": "取消", "action": "cancel"}
+                        ]
+
+                        Rectangle {
+                            width: readerInkBlockActions.width / 3
+                            height: readerInkBlockActions.height
+                            color: "transparent"
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: root.inkColor
+                                font.pixelSize: 20
+                                font.bold: true
+                            }
+
+                            Rectangle {
+                                anchors.right: parent.right
+                                width: 1
+                                height: parent.height - 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: index < 2
+                                color: root.quietLine
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (modelData.action === "ocr") {
+                                        root.recognizeReaderInkBlock(readerInkBlockActions.inkBlock)
+                                    } else if (modelData.action === "delete") {
+                                        root.deleteSelectedReaderInkBlock()
+                                    } else {
+                                        root.readerSelectedInkBlockId = ""
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                id: readerInlineOcrToast
+                visible: root.readerInlineOcrStatus !== ""
+                x: Math.round((root.width - width) / 2)
+                y: 108
+                width: Math.min(560, root.width - 72)
+                height: 58
+                radius: 10
+                color: root.paperColor
+                border.color: root.inkColor
+                border.width: 2
+                z: 10
+
+                Text {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    text: root.readerInlineOcrStatus
+                    color: root.inkColor
+                    font.pixelSize: 20
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+            }
+
+            Rectangle {
+                visible: root.readerOcrBlockSelection
+                x: Math.round((root.width - width) / 2)
+                y: 108
+                width: Math.min(520, root.width - 80)
+                height: 54
+                radius: 10
+                color: root.paperColor
+                border.color: root.inkColor
+                border.width: 2
+                z: 5
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "点选要 OCR 的手写块；点空白处取消"
+                    color: root.inkColor
+                    font.pixelSize: 20
+                    font.bold: true
+                }
+            }
+
+            Repeater {
+                model: readerStore.paragraphNotes
+
+                Item {
+                    property var note: modelData || ({})
+                    property var placement: root.readerParagraphNotePlacements()[String(note.noteId || "")] || ({ "visible": false })
+                    visible: root.showHandwrittenNotes && placement.visible
+                    x: placement.x || 0
+                    y: placement.y || 0
+                    width: placement.width || 0
+                    height: placement.height || 0
+
+                    Rectangle {
                         anchors.fill: parent
+                        radius: 7
+                        color: root.paperColor
+                        border.color: note.colorValue || root.inkColor
+                        border.width: 2
+                    }
+
+                    Text {
+                        x: 7
+                        y: 4
+                        width: parent.width - 42
+                        text: (placement.kind === "page-free" ? "本页笔记" : "段落笔记") + (note.ocrText ? " · 已识别" : "")
+                        color: root.mutedInk
+                        font.pixelSize: 13
+                        font.bold: true
+                        elide: Text.ElideRight
+                    }
+
+                    Rectangle {
+                        x: parent.width - 30
+                        y: 3
+                        width: 26
+                        height: 26
+                        radius: 13
+                        color: root.paperColor
+                        border.color: root.inkColor
+                        border.width: 1
+                        z: 3
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "×"
+                            color: root.inkColor
+                            font.pixelSize: 20
+                            font.bold: true
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: readerStore.removeParagraphNote(root.currentBookId, String(note.noteId || ""))
+                        }
+                    }
+
+                    Canvas {
+                        x: 6
+                        y: 21
+                        width: parent.width - 12
+                        height: parent.height - 27
+                        visible: !note.ocrText
                         onPaint: {
-                            var points = stroke.points || []
                             var ctx = getContext("2d")
                             ctx.clearRect(0, 0, width, height)
-                            if (points.length < 2) {
-                                return
-                            }
-                            ctx.globalAlpha = stroke.tool === "marker" ? 0.42 : 1
+                            ctx.globalAlpha = 1
                             ctx.lineCap = "round"
                             ctx.lineJoin = "round"
-                            ctx.lineWidth = stroke.lineWidth || root.readerMarkerLineWidth
-                            ctx.strokeStyle = stroke.colorValue || root.readerMarkerColor
-                            ctx.beginPath()
-                            ctx.moveTo(points[0].x || 0, points[0].y || 0)
-                            for (var i = 1; i < points.length; i++) {
-                                ctx.lineTo(points[i].x || 0, points[i].y || 0)
+                            ctx.lineWidth = 3
+                            ctx.strokeStyle = note.colorValue || root.inkColor
+                            var strokes = note.strokes || (note.points ? [note.points] : [])
+                            for (var strokeIndex = 0; strokeIndex < strokes.length; strokeIndex++) {
+                                var points = strokes[strokeIndex] || []
+                                if (points.length < 2) {
+                                    continue
+                                }
+                                ctx.beginPath()
+                                ctx.moveTo((points[0].x || 0) * width, (points[0].y || 0) * height)
+                                for (var pointIndex = 1; pointIndex < points.length; pointIndex++) {
+                                    ctx.lineTo((points[pointIndex].x || 0) * width, (points[pointIndex].y || 0) * height)
+                                }
+                                ctx.stroke()
                             }
-                            ctx.stroke()
                         }
                         Component.onCompleted: requestPaint()
                     }
+
+                    Text {
+                        x: 7
+                        y: 22
+                        width: parent.width - 14
+                        height: parent.height - 27
+                        visible: !!note.ocrText
+                        text: note.ocrText || ""
+                        color: note.colorValue || root.inkColor
+                        font.pixelSize: 16
+                        font.bold: true
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: root.recognizeParagraphNote(note)
+                    }
                 }
             }
 
-            Canvas {
-                id: readerMarkerPreviewCanvas
-                anchors.fill: parent
-                visible: root.annotationMode && root.currentStrokePoints.length > 1
-                onPaint: {
-                    var points = root.currentStrokePoints || []
-                    var ctx = getContext("2d")
-                    ctx.clearRect(0, 0, width, height)
-                    if (points.length < 2) {
-                        return
-                    }
-                    ctx.globalAlpha = root.readerMarkerTool === "eraser" ? 0.82 : 0.42
-                    ctx.lineCap = "round"
-                    ctx.lineJoin = "round"
-                    ctx.lineWidth = root.readerMarkerTool === "eraser" ? 10 : root.readerMarkerLineWidth
-                    ctx.strokeStyle = root.readerMarkerTool === "eraser" ? root.inkColor : root.readerMarkerColor
-                    ctx.beginPath()
-                    ctx.moveTo(points[0].x || 0, points[0].y || 0)
-                    for (var i = 1; i < points.length; i++) {
-                        ctx.lineTo(points[i].x || 0, points[i].y || 0)
-                    }
-                    ctx.stroke()
-                }
-                onVisibleChanged: requestPaint()
-                Connections {
-                    target: root
-                    function onCurrentStrokePointsChanged() {
-                        readerMarkerPreviewCanvas.requestPaint()
-                    }
-                }
-            }
         }
 
         Item {
@@ -6838,6 +8052,7 @@ Window {
                     ? root.readerStylusToolBarPadding * 2
                     + root.readerStylusTools.length * root.readerStylusToolDotSize
                     + Math.max(0, root.readerStylusTools.length - 1) * root.readerStylusToolGap
+                    + root.readerStylusSectionGap
                     : 74
             z: 9
             visible: root.screenName === "reader"
@@ -6857,13 +8072,31 @@ Window {
             Rectangle {
                 id: readerStylusCollapsedHandle
                 anchors.centerIn: parent
-                width: 18
-                height: 18
-                radius: 9
+                width: 26
+                height: 26
+                radius: 13
                 visible: !root.readerStylusToolsExpanded
                 color: root.readerMarkerTool === "eraser" ? root.paperColor : root.readerMarkerColor
                 border.color: root.inkColor
                 border.width: root.readerMarkerTool === "eraser" ? 3 : 1
+
+                Text {
+                    anchors.centerIn: parent
+                    text: root.readerMarkerTool === "free" ? "写" : (root.readerMarkerTool === "eraser" ? "擦" : "划")
+                    color: root.readerMarkerTool === "eraser" ? root.inkColor : "#ffffff"
+                    font.pixelSize: 13
+                    font.bold: true
+                }
+            }
+
+            Rectangle {
+                x: 12
+                y: root.readerStylusToolY(4) - Math.round(root.readerStylusSectionGap / 2) - Math.round(root.readerStylusToolGap / 2)
+                width: parent.width - 24
+                height: 2
+                visible: root.readerStylusToolsExpanded
+                color: root.quietLine
+                opacity: 0.55
             }
 
             Repeater {
@@ -6872,22 +8105,18 @@ Window {
                 Rectangle {
                     x: root.readerStylusToolBarPadding
                        + (readerStylusToolBar.width - root.readerStylusToolBarPadding * 2 - root.readerStylusToolDotSize) / 2
-                    y: root.readerStylusToolBarPadding + index * (root.readerStylusToolDotSize + root.readerStylusToolGap)
+                    y: root.readerStylusToolY(index)
                     width: root.readerStylusToolDotSize
                     height: root.readerStylusToolDotSize
                     radius: width / 2
                     visible: root.readerStylusToolsExpanded
-                    color: modelData.tool === "eraser" ? root.paperColor : modelData.value
-                    border.color: (modelData.tool === root.readerMarkerTool
-                                   && (modelData.tool === "eraser" || modelData.value === root.readerMarkerColor))
-                                  ? root.inkColor : root.quietLine
-                    border.width: (modelData.tool === root.readerMarkerTool
-                                   && (modelData.tool === "eraser" || modelData.value === root.readerMarkerColor))
-                                  ? 4 : 1
+                    color: modelData.tool === "color" ? modelData.value : root.paperColor
+                    border.color: root.readerStylusToolSelected(modelData) ? root.inkColor : root.quietLine
+                    border.width: root.readerStylusToolSelected(modelData) ? 4 : 1
 
                     Text {
                         anchors.centerIn: parent
-                        text: modelData.tool === "eraser" ? "擦" : ""
+                        text: modelData.tool === "clear" && root.readerClearArmed ? "确" : (modelData.label || "")
                         color: root.inkColor
                         font.pixelSize: 18
                         font.bold: true
@@ -6899,6 +8128,18 @@ Window {
                 anchors.fill: parent
                 onClicked: {}
             }
+        }
+
+        MouseArea {
+            id: readerPalmRejectionLayer
+            anchors.fill: parent
+            z: 10
+            visible: root.screenName === "reader" && stylusStore.palmRejectionActive
+            preventStealing: true
+            onPressed: function(mouse) { mouse.accepted = true }
+            onPositionChanged: function(mouse) { mouse.accepted = true }
+            onReleased: function(mouse) { mouse.accepted = true }
+            onCanceled: {}
         }
 
         MouseArea {
@@ -8062,7 +9303,7 @@ Window {
         x: 0
         y: root.height - height
         width: root.width
-        height: 440
+        height: 500
         visible: root.showSoftKeyboard
         z: 35
         color: root.paperColor
@@ -8071,9 +9312,9 @@ Window {
 
         Column {
             x: 22
-            y: 18
+            y: 10
             width: parent.width - 44
-            spacing: 10
+            spacing: 6
 
             Row {
                 width: parent.width
@@ -8136,8 +9377,290 @@ Window {
                 }
             }
 
+            Row {
+                width: parent.width
+                height: 44
+                spacing: 8
+
+                Repeater {
+                    model: [
+                        {"mode": "pinyin", "label": "拼音"},
+                        {"mode": "handwriting", "label": "手写"},
+                        {"mode": "english", "label": "英文"}
+                    ]
+
+                    Rectangle {
+                        property bool selected: (modelData.mode === "pinyin" && root.keyboardPinyinMode)
+                            || (modelData.mode === "handwriting" && root.keyboardHandwritingMode)
+                            || (modelData.mode === "english"
+                                && !root.keyboardPinyinMode && !root.keyboardHandwritingMode)
+                        property bool permitted: !root.keyboardTarget
+                            || root.keyboardTarget.echoMode !== TextInput.Password
+                            || modelData.mode === "english"
+                        width: 94
+                        height: parent.height
+                        radius: 4
+                        color: selected ? root.inkColor : root.surfaceColor
+                        border.color: root.inkColor
+                        border.width: 1
+                        opacity: permitted ? 1 : 0.42
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: modelData.label
+                            color: parent.selected ? root.paperColor : root.inkColor
+                            font.pixelSize: 19
+                            font.bold: true
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: parent.permitted
+                            onClicked: root.setKeyboardInputMode(modelData.mode)
+                        }
+                    }
+                }
+
+                Text {
+                    width: parent.width - 94 * 3 - 8 * 3
+                    height: parent.height
+                    text: root.keyboardHandwritingMode
+                        ? (root.keyboardCandidatePageCount() > 1
+                            ? "候选 " + (root.keyboardCandidatePage + 1) + "/" + root.keyboardCandidatePageCount()
+                            : (ocrStore.configured ? "百度 OCR · 手动识别" : "百度 OCR 尚未配置"))
+                        : (root.keyboardPinyinMode
+                            ? (root.keyboardCandidatePageCount() > 1
+                                ? "候选 " + (root.keyboardCandidatePage + 1) + "/" + root.keyboardCandidatePageCount()
+                                : "拼音候选")
+                            : "直接输入")
+                    color: root.mutedInk
+                    font.pixelSize: 18
+                    font.bold: true
+                    horizontalAlignment: Text.AlignRight
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+            }
+
+            Row {
+                width: parent.width
+                height: 50
+                spacing: 8
+                clip: true
+
+                Rectangle {
+                    property bool canMove: root.keyboardCandidatePage > 0
+                    width: root.keyboardCandidatePageCount() > 1 ? 58 : 0
+                    height: parent.height
+                    visible: width > 0
+                    radius: 4
+                    color: root.surfaceColor
+                    border.color: root.inkColor
+                    border.width: 1
+                    opacity: canMove ? 1 : 0.42
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "上页"
+                        color: root.inkColor
+                        font.pixelSize: 17
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: parent.canMove
+                        onClicked: root.keyboardChangeCandidatePage(-1)
+                    }
+                }
+
+                Text {
+                    width: root.keyboardPinyinMode && !root.keyboardHandwritingMode ? 98 : 0
+                    height: parent.height
+                    visible: width > 0
+                    text: root.keyboardPinyinBuffer === "" ? "输入拼音" : root.keyboardPinyinBuffer
+                    color: root.mutedInk
+                    font.pixelSize: 19
+                    font.bold: true
+                    elide: Text.ElideLeft
+                    verticalAlignment: Text.AlignVCenter
+                }
+
+                Repeater {
+                    model: root.keyboardPinyinMode && !root.keyboardHandwritingMode
+                        ? root.keyboardPagedPinyinCandidates() : []
+
+                    Rectangle {
+                        width: 108
+                        height: parent.height
+                        radius: 4
+                        color: root.surfaceColor
+                        border.color: root.inkColor
+                        border.width: 1
+
+                        Text {
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            text: modelData.text
+                            color: root.inkColor
+                            font.pixelSize: 21
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: root.keyboardChooseCandidate(modelData)
+                        }
+                    }
+                }
+
+                Repeater {
+                    model: root.keyboardHandwritingMode
+                        ? root.keyboardPagedHandwritingCandidates() : []
+
+                    Rectangle {
+                        width: Math.min(136, Math.max(108, handwritingCandidateText.implicitWidth + 24))
+                        height: parent.height
+                        radius: 4
+                        color: root.surfaceColor
+                        border.color: root.inkColor
+                        border.width: 1
+
+                        Text {
+                            id: handwritingCandidateText
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            text: modelData
+                            color: root.inkColor
+                            font.pixelSize: 21
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: root.keyboardChooseHandwritingCandidate(modelData)
+                        }
+                    }
+                }
+
+                Text {
+                    width: root.keyboardHandwritingMode
+                        && root.keyboardHandwritingCandidates.length === 0 ? parent.width : 0
+                    height: parent.height
+                    visible: width > 0
+                    text: root.keyboardHandwritingStatus
+                    color: root.mutedInk
+                    font.pixelSize: 19
+                    font.bold: true
+                    verticalAlignment: Text.AlignVCenter
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
+                }
+
+                Rectangle {
+                    property bool canMove: root.keyboardCandidatePage
+                        < root.keyboardCandidatePageCount() - 1
+                    width: root.keyboardCandidatePageCount() > 1 ? 58 : 0
+                    height: parent.height
+                    visible: width > 0
+                    radius: 4
+                    color: root.surfaceColor
+                    border.color: root.inkColor
+                    border.width: 1
+                    opacity: canMove ? 1 : 0.42
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "下页"
+                        color: root.inkColor
+                        font.pixelSize: 17
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: parent.canMove
+                        onClicked: root.keyboardChangeCandidatePage(1)
+                    }
+                }
+            }
+
+            Rectangle {
+                id: keyboardHandwritingPad
+                width: parent.width
+                height: 268
+                visible: root.keyboardHandwritingMode
+                color: "#ffffff"
+                border.color: root.inkColor
+                border.width: 2
+                radius: 4
+                clip: true
+
+                Rectangle {
+                    x: 12
+                    y: Math.round(parent.height / 2)
+                    width: parent.width - 24
+                    height: 1
+                    color: root.quietLine
+                    opacity: 0.45
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: root.keyboardHandwritingStrokes.length === 0
+                        && root.keyboardHandwritingCurrentStroke.length === 0
+                        ? "在这里连续手写，写完后点“识别”" : ""
+                    color: root.mutedInk
+                    opacity: 0.52
+                    font.pixelSize: 20
+                    font.bold: true
+                }
+
+                InkCanvas {
+                    id: keyboardHandwritingInk
+                    anchors.fill: parent
+                    strokes: root.keyboardHandwritingStoredStrokes()
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    z: 2
+                    preventStealing: true
+                    onPressed: function(mouse) {
+                        mouse.accepted = true
+                        if (stylusStore.palmRejectionActive) {
+                            return
+                        }
+                        var point = keyboardHandwritingPad.mapToItem(root.contentItem,
+                                                                    mouse.x, mouse.y)
+                        root.beginKeyboardHandwritingStroke(point.x, point.y)
+                    }
+                    onPositionChanged: function(mouse) {
+                        if (pressed && !stylusStore.palmRejectionActive) {
+                            var point = keyboardHandwritingPad.mapToItem(root.contentItem,
+                                                                        mouse.x, mouse.y)
+                            root.appendKeyboardHandwritingStroke(point.x, point.y)
+                        }
+                    }
+                    onReleased: function(mouse) {
+                        var point = keyboardHandwritingPad.mapToItem(root.contentItem,
+                                                                    mouse.x, mouse.y)
+                        root.endKeyboardHandwritingStroke(point.x, point.y)
+                    }
+                    onCanceled: {
+                        root.cancelKeyboardHandwritingStroke()
+                    }
+                }
+            }
+
             Repeater {
-                model: root.keyboardRows
+                model: root.keyboardHandwritingMode ? [] : root.keyboardRows
 
                 Row {
                     id: keyRow
@@ -8169,7 +9692,7 @@ Window {
 
                             MouseArea {
                                 anchors.fill: parent
-                                onClicked: root.keyboardInsert(modelData)
+                                onClicked: root.keyboardTypeKey(modelData)
                             }
                         }
                     }
@@ -8180,6 +9703,7 @@ Window {
                 width: parent.width
                 height: 48
                 spacing: 10
+                visible: !root.keyboardHandwritingMode
 
                 Rectangle {
                     width: Math.floor(parent.width * 0.26)
@@ -8221,7 +9745,13 @@ Window {
 
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: root.keyboardInsert(" ")
+                        onClicked: {
+                            if (root.keyboardPinyinMode && root.keyboardCandidates.length > 0) {
+                                root.keyboardChooseCandidate(root.keyboardCandidates[0])
+                            } else {
+                                root.keyboardInsert(" ")
+                            }
+                        }
                     }
                 }
 
@@ -8247,6 +9777,63 @@ Window {
                             if (root.keyboardTarget) {
                                 root.keyboardTarget.text = ""
                                 root.keyboardTarget.cursorPosition = 0
+                            }
+                        }
+                    }
+                }
+            }
+
+            Row {
+                width: parent.width
+                height: 48
+                spacing: 8
+                visible: root.keyboardHandwritingMode
+
+                Repeater {
+                    model: [
+                        {"action": "undo", "label": "撤一笔"},
+                        {"action": "clear", "label": "清笔迹"},
+                        {"action": "recognize", "label": ocrStore.busy ? "识别中" : "识别"},
+                        {"action": "backspace", "label": "退格"}
+                    ]
+
+                    Rectangle {
+                        property bool recognitionButton: modelData.action === "recognize"
+                        property bool recognitionReady: recognitionButton
+                            && ocrStore.configured
+                            && root.keyboardHandwritingStrokes.length > 0
+                            && !ocrStore.busy
+                        width: Math.floor((parent.width - 24) / 4)
+                        height: parent.height
+                        radius: 4
+                        color: recognitionReady ? root.brandGreenDark : root.surfaceColor
+                        border.color: root.inkColor
+                        border.width: 1
+                        opacity: recognitionButton && !recognitionReady ? 0.52 : 1
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: modelData.label
+                            color: parent.recognitionReady ? "#ffffff" : root.inkColor
+                            font.pixelSize: 19
+                            font.bold: true
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: !parent.recognitionButton || parent.recognitionReady
+                            onClicked: {
+                                if (modelData.action === "undo") {
+                                    root.keyboardUndoHandwritingStroke()
+                                } else if (modelData.action === "clear") {
+                                    root.keyboardClearHandwriting()
+                                    root.keyboardHandwritingStatus = ocrStore.configured
+                                        ? "写完后点“识别”" : "需联网使用百度 OCR"
+                                } else if (modelData.action === "recognize") {
+                                    root.keyboardRecognizeHandwriting()
+                                } else {
+                                    root.keyboardBackspace()
+                                }
                             }
                         }
                     }
