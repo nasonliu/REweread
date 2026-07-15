@@ -2,6 +2,7 @@
 
 #include <QPointF>
 #include <QRect>
+#include <QByteArray>
 
 #include <mutex>
 
@@ -20,6 +21,9 @@ public:
     // The returned rectangle is in framebuffer coordinates and still needs to
     // be submitted with refreshMonoFast().
     QRect drawBlackLine(const QPointF &from, const QPointF &to, int radius);
+    QByteArray snapshot(const QRect &rect);
+    void restore(const QRect &rect, const QByteArray &pixels);
+    void dissolve(const QRect &rect, const QByteArray &background, int stage, int stages);
     void refreshMonoFast(const QRect &dirty);
 
 private:

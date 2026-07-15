@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(rm_weread_qt VERSION 1.5.0 LANGUAGES CXX)
+project(rm_weread_qt VERSION 2.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -14,6 +14,8 @@ find_package(Qt6 REQUIRED COMPONENTS Quick Network)
 qt_standard_project_setup(REQUIRES 6.5)
 
 qt_add_executable(rm_weread_qt
+    ai_reply_store.cpp
+    ai_reply_store.h
     account_store.cpp
     account_store.h
     app_control.cpp
@@ -28,6 +30,8 @@ qt_add_executable(rm_weread_qt
     download_store.h
     frontlight_store.cpp
     frontlight_store.h
+    magic_reply_ink_item.cpp
+    magic_reply_ink_item.h
     main.cpp
     network_store.cpp
     network_store.h
@@ -57,7 +61,7 @@ target_include_directories(rm_weread_qt PRIVATE ${QRCODEGEN_SOURCE_DIR}/cpp)
 qt_add_qml_module(rm_weread_qt
     URI WeReadMove
     VERSION 1.0
-    SOURCES ink_canvas_item.cpp ink_canvas_item.h
+    SOURCES ink_canvas_item.cpp ink_canvas_item.h magic_reply_ink_item.cpp magic_reply_ink_item.h
     QML_FILES Main.qml PinyinEngine.js PinyinLexicon.js FreeNoteAnchor.js SocialAnchor.js
 )
 

@@ -30,6 +30,32 @@ Window {
     property int selectedIndex: 0
     property var detailBookOverride: ({})
     property string screenName: "shelf"
+    property var magicStrokes: []
+    property var magicCurrentStroke: []
+    property var magicStrokeRecords: []
+    property string magicAnswer: ""
+    // Keep incoming model text separate from the ink already written to the
+    // paper. This guarantees a stream chunk can never appear as a whole word.
+    property string magicReplyDraft: ""
+    property string magicRevealText: ""
+    property int magicRevealLength: 0
+    property bool magicAwaitingReply: false
+    property bool magicReplyComplete: false
+    property bool magicPaperCleared: false
+    property real magicQuestionOpacity: 1.0
+    property real magicAnswerOpacity: 1.0
+    property string magicFontChoice: "龙藏体"
+    property string magicPersonaChoice: "温柔笔友"
+    property int magicAnswerMaxCharacters: 84
+    property int magicNotebookAnswerTop: 112
+    property int magicNotebookAnswerFontPixels: 104
+    property int magicNotebookLinePitch: Math.round(magicNotebookAnswerFontPixels * 1.08)
+    property int magicNotebookFirstBaselineY: magicNotebookAnswerTop + Math.round(magicNotebookAnswerFontPixels * 0.84)
+    property bool magicMenuOpen: false
+    property bool magicMenuPenTap: false
+    property int magicWritingHeight: Math.round(root.height * 0.56)
+    property real magicInkBottomY: 0
+    property real magicReplyTilt: -0.75
     property int pageIndex: 0
     property string currentBookId: ""
     property int shelfPageIndex: 0
@@ -39,6 +65,11 @@ Window {
     property int readerFooterGap: root.readerLinePixels()
     property int readerFooterTop: root.height - root.readerBottomGestureHeight - root.readerFooterHeight
     property int readerContentBottom: root.readerFooterTop - root.readerFooterGap
+    // The page break is line-snapped, while the visible rich-text viewport
+    // keeps every remaining safe pixel above the footer. Qt's text document
+    // may need a few extra raster rows for a glyph's descent even when its
+    // logical line height is an exact multiple.
+    property int readerTextBottomGuard: 2
     property int readerCatalogPanelWidth: Math.round(root.width * 0.56)
     property int readerTextTopMargin: 96
     property int readerImageTopMargin: 72
@@ -89,6 +120,15 @@ Window {
     property int pendingFreeInkPageIndex: -1
     property int pendingFreeInkPageCount: 1
     property int pendingFreeInkSequence: 0
+    property bool readerAiHandwritingMode: false
+    property bool readerForceNewFreeInkGroup: false
+    property string readerAiPendingBlockId: ""
+    property string readerAiPendingBookId: ""
+    property int readerAiPendingPageIndex: -1
+    property string readerAiReplyDraft: ""
+    property string readerAiRevealBlockId: ""
+    property string readerAiRevealText: ""
+    property int readerAiRevealLength: 0
     property bool showHandwrittenNotes: false
     property int readerNotesGutterWidth: 190
     property var readerCurrentLineBoxes: []
@@ -139,6 +179,7 @@ Window {
         {"id": "blue", "tool": "color", "name": "蓝", "value": "#1d5f99", "label": ""},
         {"id": "marker", "tool": "marker", "name": "荧光笔", "value": "", "label": "划"},
         {"id": "free", "tool": "free", "name": "自由写", "value": "", "label": "写"},
+        {"id": "ai", "tool": "ai", "name": "AI 回信", "value": "", "label": "AI"},
         {"id": "notes", "tool": "notes", "name": "旧笔记", "value": "", "label": "笔"},
         {"id": "ocr", "tool": "ocr", "name": "识别", "value": "", "label": "识"},
         {"id": "eraser", "tool": "eraser", "name": "橡皮", "value": "#ffffff", "label": "擦"},
@@ -162,7 +203,37 @@ Window {
             ? zenHeiFont.name
             : readerFontChoice === "霞鹜文楷" && lxgwWenKaiFont.status === FontLoader.Ready
                 ? lxgwWenKaiFont.name
-                : ""
+                : readerFontChoice === "思源黑体" && sourceHanSansFont.status === FontLoader.Ready
+                    ? sourceHanSansFont.name
+                    : readerFontChoice === "思源宋体" && sourceHanSerifFont.status === FontLoader.Ready
+                        ? sourceHanSerifFont.name
+                        : readerFontChoice === "寒蝉正楷" && chillKaiFont.status === FontLoader.Ready
+                            ? chillKaiFont.name
+                            : readerFontChoice === "寒蝉活宋" && chillHuoSongFont.status === FontLoader.Ready
+                                ? chillHuoSongFont.name
+                                : readerFontChoice === "马善政" && maShanZhengFont.status === FontLoader.Ready
+                                    ? maShanZhengFont.name
+                                    : readerFontChoice === "刘建毛草" && liuJianMaoCaoFont.status === FontLoader.Ready
+                                        ? liuJianMaoCaoFont.name
+                                        : readerFontChoice === "智勇行" && zhiMangXingFont.status === FontLoader.Ready
+                                            ? zhiMangXingFont.name
+                                            : readerFontChoice === "龙藏体" && longCangFont.status === FontLoader.Ready
+                                                ? longCangFont.name
+                                                : readerFontChoice === "站酷快乐" && zcoolKuaiLeFont.status === FontLoader.Ready
+                                                    ? zcoolKuaiLeFont.name
+                                                    : ""
+    property string magicFontFamily: magicFontChoice === "马善政" && maShanZhengFont.status === FontLoader.Ready ? maShanZhengFont.name
+        : magicFontChoice === "刘建毛草" && liuJianMaoCaoFont.status === FontLoader.Ready ? liuJianMaoCaoFont.name
+        : magicFontChoice === "智勇行" && zhiMangXingFont.status === FontLoader.Ready ? zhiMangXingFont.name
+        : magicFontChoice === "龙藏体" && longCangFont.status === FontLoader.Ready ? longCangFont.name
+        : magicFontChoice === "站酷快乐" && zcoolKuaiLeFont.status === FontLoader.Ready ? zcoolKuaiLeFont.name
+        : lxgwWenKaiFont.name
+    property string magicFontPath: magicFontChoice === "马善政" ? "/home/root/weread-qt/fonts/ma-shan-zheng.ttf"
+        : magicFontChoice === "刘建毛草" ? "/home/root/weread-qt/fonts/liu-jian-mao-cao.ttf"
+        : magicFontChoice === "智勇行" ? "/home/root/weread-qt/fonts/zhi-mang-xing.ttf"
+        : magicFontChoice === "站酷快乐" ? "/home/root/weread-qt/fonts/zcool-kuaile.ttf"
+        : magicFontChoice === "霞鹜文楷" ? "/home/root/weread-qt/fonts/lxgw-wenkai.ttf"
+        : "/home/root/weread-qt/fonts/long-cang.ttf"
     property var readerPageStarts: [0]
     property var readerPageImages: [""]
     property var readerChapterPageLabels: ({})
@@ -207,6 +278,8 @@ Window {
     property bool readerImageLoadFailed: false
     property var readerLayoutSelfTestPages: []
     property int readerLayoutSelfTestCursor: 0
+    property var readerLayoutSelfTestCases: []
+    property int readerLayoutSelfTestCaseCursor: 0
     property var readerSelfTestSavedSettings: ({})
     property bool sleepOverlayVisible: false
     property string sleepCoverSource: ""
@@ -223,6 +296,7 @@ Window {
     onReaderParagraphSpacingChanged: root.markReaderPaginationDirty()
     onReaderFirstLineIndentCharsChanged: root.markReaderPaginationDirty()
     onReaderMarginChanged: root.markReaderPaginationDirty()
+    onReaderFontFamilyChanged: root.markReaderPaginationDirty()
     onWidthChanged: root.markReaderPaginationDirty()
     onHeightChanged: root.markReaderPaginationDirty()
 
@@ -249,8 +323,20 @@ Window {
         property bool wenkaiDefaultMigrated: false
     }
 
+    Settings {
+        id: persistedMagicBookSettings
+        category: "magicBook"
+        property alias fontChoice: root.magicFontChoice
+        property alias personaChoice: root.magicPersonaChoice
+        property bool longCangDefaultMigrated: false
+    }
+
     Component.onCompleted: {
         root.migrateReaderDefaults()
+        if (!persistedMagicBookSettings.longCangDefaultMigrated) {
+            root.magicFontChoice = "龙藏体"
+            persistedMagicBookSettings.longCangDefaultMigrated = true
+        }
         accountStore.refresh()
     }
 
@@ -268,6 +354,31 @@ Window {
         id: lxgwWenKaiFont
         source: "file:///home/root/weread-qt/fonts/lxgw-wenkai.ttf"
     }
+
+    FontLoader {
+        id: sourceHanSansFont
+        source: "file:///home/root/weread-qt/fonts/source-han-sans-sc.otf"
+    }
+
+    FontLoader {
+        id: sourceHanSerifFont
+        source: "file:///home/root/weread-qt/fonts/source-han-serif-sc.otf"
+    }
+
+    FontLoader {
+        id: chillKaiFont
+        source: "file:///home/root/weread-qt/fonts/chill-kai.ttf"
+    }
+
+    FontLoader {
+        id: chillHuoSongFont
+        source: "file:///home/root/weread-qt/fonts/chill-huosong.otf"
+    }
+    FontLoader { id: maShanZhengFont; source: "file:///home/root/weread-qt/fonts/ma-shan-zheng.ttf" }
+    FontLoader { id: liuJianMaoCaoFont; source: "file:///home/root/weread-qt/fonts/liu-jian-mao-cao.ttf" }
+    FontLoader { id: zhiMangXingFont; source: "file:///home/root/weread-qt/fonts/zhi-mang-xing.ttf" }
+    FontLoader { id: longCangFont; source: "file:///home/root/weread-qt/fonts/long-cang.ttf" }
+    FontLoader { id: zcoolKuaiLeFont; source: "file:///home/root/weread-qt/fonts/zcool-kuaile.ttf" }
 
     function htmlEscape(value) {
         return String(value || "")
@@ -992,7 +1103,7 @@ Window {
         }
     }
 
-    function formatReaderText(value, textStart, textEnd) {
+    function formatReaderText(value, textStart, textEnd, imageSource, imageCaption) {
         var source = String(value || "")
         var paragraphs = source.split(/\n+/)
         var out = []
@@ -1000,7 +1111,9 @@ Window {
         var chapterStart = root.isReaderChapterStart(textStart)
         var sourceCursor = 0
         var bodyLineHeight = Math.max(1, root.readerLinePixels())
-        var imageCaptionPrefix = root.currentReaderImageSource !== "" ? String(root.currentReaderImageCaption || "").replace(/\s+/g, " ").trim() : ""
+        var pageImageSource = imageSource === undefined ? root.currentReaderImageSource : String(imageSource || "")
+        var pageImageCaption = imageCaption === undefined ? root.currentReaderImageCaption : String(imageCaption || "")
+        var imageCaptionPrefix = pageImageSource !== "" ? pageImageCaption.replace(/\s+/g, " ").trim() : ""
         var bodySourceStart = imageCaptionPrefix === "" ? 0 : -1
         for (var i = 0; i < paragraphs.length; i++) {
             var rawPara = paragraphs[i]
@@ -1154,6 +1267,10 @@ Window {
         return Math.max(linePx * 2, Math.floor(usable / linePx) * linePx)
     }
 
+    function readerTextViewportHeight(topY) {
+        return Math.max(1, root.readerContentBottom - topY)
+    }
+
     function readerImagePageCount() {
         return 0
     }
@@ -1211,7 +1328,7 @@ Window {
         var textEnd = root.readerNextPageOffset(start, root.readerTextTopMargin)
         var image = root.readerImageForPageRange(start, textEnd)
         var topY = root.readerImageEntrySource(image) !== "" ? root.readerImageTextTopY : root.readerTextTopMargin
-        return Math.max(1, root.readerNextPageOffset(start, topY) - start)
+        return Math.max(1, root.readerNextPageOffset(start, topY, image) - start)
     }
 
     function readerPaginationBuildSignature() {
@@ -1297,7 +1414,7 @@ Window {
             var image = root.readerImageForPageRange(offset, textOnlyEnd)
             var imageSource = root.readerImageEntrySource(image)
             if (imageSource !== "") {
-                var imageEnd = root.readerNextPageOffset(offset, root.readerImageTextTopY)
+                var imageEnd = root.readerNextPageOffset(offset, root.readerImageTextTopY, image)
                 var imageStart = root.readerImageEntryTextStart(image)
                 if (imageStart >= imageEnd) {
                     image = ({})
@@ -1307,7 +1424,7 @@ Window {
             starts.push(offset)
             images.push(image)
             var topY = imageSource !== "" ? root.readerImageTextTopY : root.readerTextTopMargin
-            offset = root.readerNextPageOffset(offset, topY)
+            offset = root.readerNextPageOffset(offset, topY, image)
             guard += 1
         }
         if (starts.length === 0) {
@@ -1405,6 +1522,15 @@ Window {
             }
             root.flushPendingFreeInkStrokes()
         }
+    }
+
+    // A pause means the current free-ink block is ready. This timer exists
+    // only in the explicit AI tool, so ordinary notes never leave the device.
+    Timer {
+        id: readerAiHandwritingPauseTimer
+        interval: 1400
+        repeat: false
+        onTriggered: root.beginPausedAiHandwriting()
     }
 
     Timer {
@@ -1875,15 +2001,70 @@ Window {
         return root.readerCleanPageEnd(body, safeStart, safeEnd)
     }
 
-    function readerNextPageOffset(start, topY) {
+    function readerFormattedRangeText(start, end, image) {
+        var text = String(readerStore.bodyText || "")
+        var caption = root.readerImageEntryCaption(image)
+        var body = text.slice(start, end).trim()
+        return caption !== "" ? caption + "\n\n" + body : body
+    }
+
+    function readerMeasuredPageHeight(start, end, image) {
+        if (!readerPageMeasure) {
+            return 0
+        }
+        readerPageMeasure.width = root.readerTextWidth()
+        readerPageMeasure.text = root.formatReaderText(
+                    root.readerFormattedRangeText(start, end, image),
+                    start,
+                    end,
+                    root.readerImageEntrySource(image),
+                    root.readerImageEntryCaption(image))
+        return Math.ceil(readerPageMeasure.paintedHeight)
+    }
+
+    function readerMeasuredPageFits(start, end, topY, image) {
+        var safeHeight = Math.max(1, root.readerTextViewportHeight(topY) - root.readerTextBottomGuard)
+        return root.readerMeasuredPageHeight(start, end, image) <= safeHeight
+    }
+
+    function readerMeasuredPageEnd(start, candidateEnd, topY, image) {
+        var text = String(readerStore.bodyText || "")
+        var safeStart = root.clamp(Math.floor(Number(start) || 0), 0, text.length)
+        var safeEnd = root.clamp(Math.floor(Number(candidateEnd) || 0), safeStart + 1, text.length)
+        if (root.readerMeasuredPageFits(safeStart, safeEnd, topY, image)) {
+            return safeEnd
+        }
+        var low = safeStart + 1
+        var high = safeEnd - 1
+        var best = safeStart + 1
+        var guard = 0
+        while (low <= high && guard < 20) {
+            guard += 1
+            var mid = Math.floor((low + high) / 2)
+            var measuredEnd = Math.max(safeStart + 1, root.readerCleanPageEnd(text, safeStart, mid))
+            if (root.readerMeasuredPageFits(safeStart, measuredEnd, topY, image)) {
+                best = measuredEnd
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        best = root.readerPreferredPageEnd(text, safeStart, best)
+        while (best > safeStart + 1 && !root.readerMeasuredPageFits(safeStart, best, topY, image)) {
+            best = root.readerCleanPageEnd(text, safeStart, best - 1)
+        }
+        return Math.max(safeStart + 1, best)
+    }
+
+    function readerNextPageOffset(start, topY, image) {
         var text = String(readerStore.bodyText || "")
         var safeStart = Math.max(0, Math.floor(Number(start) || 0))
         var rawEnd = root.readerEstimatedPageEnd(safeStart, topY)
         var chapterBreak = root.nextReaderChapterStartAfter(safeStart)
-        if (chapterBreak > safeStart && chapterBreak <= rawEnd) {
-            return chapterBreak
-        }
-        return root.readerPreferredPageEnd(text, safeStart, rawEnd)
+        var candidateEnd = chapterBreak > safeStart && chapterBreak <= rawEnd
+            ? chapterBreak
+            : root.readerPreferredPageEnd(text, safeStart, rawEnd)
+        return root.readerMeasuredPageEnd(safeStart, candidateEnd, topY, image || ({}))
     }
 
     function buildReaderPaginationWindowFromOffset(offset, pageCount) {
@@ -1897,7 +2078,7 @@ Window {
             var image = root.readerImageForPageRange(start, textOnlyEnd)
             var imageSource = root.readerImageEntrySource(image)
             if (imageSource !== "") {
-                var imageEnd = root.readerNextPageOffset(start, root.readerImageTextTopY)
+                var imageEnd = root.readerNextPageOffset(start, root.readerImageTextTopY, image)
                 var imageStart = root.readerImageEntryTextStart(image)
                 if (imageStart >= imageEnd) {
                     image = ({})
@@ -1907,7 +2088,7 @@ Window {
             starts.push(start)
             images.push(image)
             var topY = imageSource !== "" ? root.readerImageTextTopY : root.readerTextTopMargin
-            var next = root.readerNextPageOffset(start, topY)
+            var next = root.readerNextPageOffset(start, topY, image)
             if (next <= start) {
                 break
             }
@@ -1946,7 +2127,7 @@ Window {
         var lastTopY = root.readerImageEntrySource(lastImage) !== ""
             ? root.readerImageTextTopY
             : root.readerTextTopMargin
-        var cursor = root.readerNextPageOffset(starts[lastIndex], lastTopY)
+        var cursor = root.readerNextPageOffset(starts[lastIndex], lastTopY, lastImage)
         var added = 0
         var target = Math.max(1, Math.floor(Number(additionalPages) || 0))
         while (cursor < text.length && added < target) {
@@ -1954,7 +2135,7 @@ Window {
             var image = root.readerImageForPageRange(cursor, textOnlyEnd)
             var imageSource = root.readerImageEntrySource(image)
             if (imageSource !== "") {
-                var imageEnd = root.readerNextPageOffset(cursor, root.readerImageTextTopY)
+                var imageEnd = root.readerNextPageOffset(cursor, root.readerImageTextTopY, image)
                 if (root.readerImageEntryTextStart(image) >= imageEnd) {
                     image = ({})
                     imageSource = ""
@@ -1963,7 +2144,7 @@ Window {
             starts.push(cursor)
             images.push(image)
             var topY = imageSource !== "" ? root.readerImageTextTopY : root.readerTextTopMargin
-            var next = root.readerNextPageOffset(cursor, topY)
+            var next = root.readerNextPageOffset(cursor, topY, image)
             if (next <= cursor) {
                 break
             }
@@ -2028,9 +2209,10 @@ Window {
         var safePage = root.clamp(root.pageIndex, 0, pageCount - 1)
         var start = root.readerPageStartOffset(safePage)
         var nextStart = root.readerPageStarts[safePage + 1] || 0
+        var image = root.readerPageImages[safePage] || ({})
         var end = nextStart > start
             ? nextStart
-            : root.readerNextPageOffset(start, topY)
+            : root.readerNextPageOffset(start, topY, image)
         return text.slice(start, end).trim()
     }
 
@@ -2050,7 +2232,7 @@ Window {
         var nextStart = root.readerPageStarts[root.pageIndex + 1] || 0
         var end = nextStart > start
             ? nextStart
-            : root.readerNextPageOffset(start, topY)
+            : root.readerNextPageOffset(start, topY, image)
         root.currentReaderImageSource = imageSource
         root.currentReaderImageCaption = root.readerImageEntryCaption(image)
         root.currentReaderTextTopY = topY
@@ -2227,8 +2409,11 @@ Window {
         if (tool.tool === "color") {
             return tool.value === root.readerMarkerColor
         }
+        if (tool.tool === "ai") {
+            return root.readerAiHandwritingMode
+        }
         if (tool.tool === "marker" || tool.tool === "free" || tool.tool === "eraser") {
-            return tool.tool === root.readerMarkerTool
+            return tool.tool === root.readerMarkerTool && !root.readerAiHandwritingMode
         }
         if (tool.tool === "notes") {
             return root.showHandwrittenNotes
@@ -2270,6 +2455,15 @@ Window {
             root.beginReaderInkBlockOcrSelection()
             return true
         }
+        if (tool.tool === "ai") {
+            root.readerMarkerTool = "free"
+            root.readerAiHandwritingMode = true
+            root.readerClearArmed = false
+            readerClearConfirmTimer.stop()
+            root.annotationMode = true
+            root.readerStylusCollapsePending = true
+            return true
+        }
         if (tool.tool === "clear") {
             if (!root.readerClearArmed) {
                 root.readerClearArmed = true
@@ -2282,6 +2476,7 @@ Window {
             return true
         }
         root.readerMarkerTool = tool.tool || "marker"
+        root.readerAiHandwritingMode = false
         root.readerClearArmed = false
         readerClearConfirmTimer.stop()
         root.readerStylusCollapsePending = true
@@ -2426,9 +2621,15 @@ Window {
                 "colorValue": root.readerMarkerColor,
                 "points": points,
                 "tool": "free",
-                "lineWidth": 4
+                "lineWidth": 4,
+                "groupId": root.readerForceNewFreeInkGroup
+                    ? "ink-" + Date.now() + "-ai" : ""
             }])
+            root.readerForceNewFreeInkGroup = false
             readerInkPersistTimer.restart()
+            if (root.readerAiHandwritingMode) {
+                readerAiHandwritingPauseTimer.restart()
+            }
         }
         root.currentFreeNotePoints = []
         root.currentFreeNoteStrokes = []
@@ -2839,50 +3040,70 @@ Window {
             return "ending-punctuation page=" + root.pageIndex + " char=" + lastChar
         }
         var linePx = Math.max(1, root.readerEstimatedLinePixels())
-        var bodyHeight = Math.ceil(readerBodyText.height)
+        var paginationHeight = Math.ceil(root.readerBodyHeight(root.currentReaderTextTopY))
+        var viewportHeight = Math.ceil(root.readerTextViewportHeight(root.currentReaderTextTopY))
         var paintedHeight = Math.ceil(readerBodyText.paintedHeight)
-        if (bodyHeight % linePx !== 0) {
-            return "non-line-height bodyHeight=" + bodyHeight + " linePx=" + linePx
+        if (paginationHeight % linePx !== 0) {
+            return "non-line-height paginationHeight=" + paginationHeight + " linePx=" + linePx
         }
-        if (paintedHeight > bodyHeight + 2) {
-            return "overflow page=" + root.pageIndex + " painted=" + paintedHeight + " body=" + bodyHeight
+        if (paintedHeight > viewportHeight - root.readerTextBottomGuard) {
+            return "overflow page=" + root.pageIndex + " painted=" + paintedHeight + " viewport=" + viewportHeight
         }
-        if (readerBodyText.y + paintedHeight > readerBodyText.y + bodyHeight + 2) {
-            return "bottom-overlap page=" + root.pageIndex + " paintedBottom=" + (readerBodyText.y + paintedHeight) + " bodyBottom=" + (readerBodyText.y + bodyHeight)
+        if (readerBodyText.y + paintedHeight > root.readerContentBottom - root.readerTextBottomGuard) {
+            return "bottom-overlap page=" + root.pageIndex + " paintedBottom=" + (readerBodyText.y + paintedHeight) + " contentBottom=" + root.readerContentBottom
+        }
+        var measuredHeight = root.readerMeasuredPageHeight(root.currentReaderTextStart,
+                                                            root.currentReaderTextEnd,
+                                                            root.readerPageImages[root.pageIndex] || ({}))
+        if (Math.abs(measuredHeight - paintedHeight) > 2) {
+            return "measurement-drift page=" + root.pageIndex + " measure=" + measuredHeight + " painted=" + paintedHeight
         }
         if (root.currentReaderImageSource === "" && root.pageIndex < root.readerCachedPageCount - 1
                 && !root.isReaderChapterEnd(root.currentReaderTextEnd)
                 && !root.isReaderNearChapterEnd(root.currentReaderTextStart, root.currentReaderTextEnd)
-                && paintedHeight < bodyHeight * 0.97) {
-            return "underfilled-page page=" + root.pageIndex + " painted=" + paintedHeight + " body=" + bodyHeight
+                && paintedHeight < paginationHeight * 0.97) {
+            return "underfilled-page page=" + root.pageIndex + " painted=" + paintedHeight + " pagination=" + paginationHeight
         }
         return ""
     }
 
-    function runReaderLayoutSelfTest() {
-        root.readerSelfTestSavedSettings = root.captureReaderSettings()
-        root.readerFontChoice = "霞鹜文楷"
-        root.readerFontSize = 38
-        root.readerFontWeight = Font.DemiBold
-        root.readerLineHeight = 1.26
-        root.readerParagraphSpacing = 12
-        root.readerFirstLineIndentChars = 2
-        root.readerMargin = 64
-        if (!root.enterReaderForSelfTest("reader-layout-selftest")) {
-            return
-        }
+    function prepareReaderLayoutSelfTestCase() {
+        var layoutCase = root.readerLayoutSelfTestCases[root.readerLayoutSelfTestCaseCursor] || ({})
+        root.readerFontChoice = String(layoutCase.fontChoice || "霞鹜文楷")
+        root.readerLineHeight = Number(layoutCase.lineHeight || 1.26)
         root.rebuildReaderPagination()
         var count = Math.max(1, root.readerCachedPageCount)
         var imagePage = root.firstReaderImagePage()
         root.readerLayoutSelfTestPages = root.uniqueReaderLayoutPages([
             Math.floor(count * 0.08),
-            Math.floor(count * 0.33),
-            Math.floor(count * 0.66),
-            Math.floor(count * 0.9),
-            imagePage > Math.floor(count * 0.04) ? imagePage : Math.floor(count * 0.12)
+            Math.floor(count * 0.52),
+            Math.floor(count * 0.88),
+            imagePage > Math.floor(count * 0.04) ? imagePage : Math.floor(count * 0.08)
         ], count)
         root.readerLayoutSelfTestCursor = 0
         root.setReaderPage(root.readerLayoutSelfTestPages[0] || 0)
+    }
+
+    function runReaderLayoutSelfTest() {
+        root.readerSelfTestSavedSettings = root.captureReaderSettings()
+        root.readerFontSize = 38
+        root.readerFontWeight = Font.DemiBold
+        root.readerParagraphSpacing = 12
+        root.readerFirstLineIndentChars = 2
+        root.readerMargin = 64
+        root.readerLayoutSelfTestCases = []
+        var fonts = ["微米黑", "正黑", "霞鹜文楷", "思源黑体", "思源宋体", "寒蝉正楷", "寒蝉活宋"]
+        var lineHeights = [1.16, 1.26, 1.36, 1.46]
+        for (var fontIndex = 0; fontIndex < fonts.length; fontIndex++) {
+            for (var lineIndex = 0; lineIndex < lineHeights.length; lineIndex++) {
+                root.readerLayoutSelfTestCases.push({ "fontChoice": fonts[fontIndex], "lineHeight": lineHeights[lineIndex] })
+            }
+        }
+        root.readerLayoutSelfTestCaseCursor = 0
+        if (!root.enterReaderForSelfTest("reader-layout-selftest")) {
+            return
+        }
+        root.prepareReaderLayoutSelfTestCase()
         readerLayoutSelfTestTimer.restart()
     }
 
@@ -3096,12 +3317,12 @@ Window {
 
     Timer {
         id: readerLayoutSelfTestTimer
-        interval: 700
+        interval: 350
         repeat: false
         onTriggered: {
-        if (lxgwWenKaiFont.status !== FontLoader.Ready || root.readerFontFamily === "") {
+        if (root.readerFontFamily === "") {
                 root.restoreReaderSettings(root.readerSelfTestSavedSettings)
-                console.log("reader-layout-selftest=fail font-status=" + lxgwWenKaiFont.status + " family=" + root.readerFontFamily)
+                console.log("reader-layout-selftest=fail font-family-empty choice=" + root.readerFontChoice)
                 appControl.quitToSystem()
                 return
             }
@@ -3114,9 +3335,17 @@ Window {
             }
             root.readerLayoutSelfTestCursor += 1
             if (root.readerLayoutSelfTestCursor >= root.readerLayoutSelfTestPages.length) {
-                console.log("reader-layout-selftest=ok pages=" + root.readerLayoutSelfTestPages.join(",") +
+                root.readerLayoutSelfTestCaseCursor += 1
+                if (root.readerLayoutSelfTestCaseCursor < root.readerLayoutSelfTestCases.length) {
+                    root.prepareReaderLayoutSelfTestCase()
+                    readerLayoutSelfTestTimer.restart()
+                    return
+                }
+                console.log("reader-layout-selftest=ok cases=" + root.readerLayoutSelfTestCases.length +
+                            " pages=" + root.readerLayoutSelfTestPages.join(",") +
                             " linePx=" + root.readerEstimatedLinePixels() +
-                            " bodyHeight=" + Math.ceil(readerBodyText.height) +
+                            " paginationHeight=" + Math.ceil(root.readerBodyHeight(root.currentReaderTextTopY)) +
+                            " viewportHeight=" + Math.ceil(readerBodyText.height) +
                             " paintedHeight=" + Math.ceil(readerBodyText.paintedHeight))
                 root.restoreReaderSettings(root.readerSelfTestSavedSettings)
                 appControl.quitToSystem()
@@ -3578,6 +3807,121 @@ Window {
         ocrStore.recognizeStrokeBlock(strokes)
     }
 
+    function magicMenuDotHit(x, y) {
+        return x >= magicMenuDot.x - 14 && x <= magicMenuDot.x + magicMenuDot.width + 14
+            && y >= magicMenuDot.y - 14 && y <= magicMenuDot.y + magicMenuDot.height + 14
+    }
+
+    function magicBegin(x, y) {
+        if (magicMenuDotHit(x, y)) {
+            magicMenuPenTap = true
+            return
+        }
+        if (magicMenuOpen || x < magicInk.x || x > magicInk.x + magicInk.width
+                || y < magicInk.y || y > magicInk.y + magicInk.height) {
+            return
+        }
+        // A Chinese character is made from several pen-down strokes, so
+        // existing ink alone must never mean "start over".  Only a submitted
+        // question or an already-visible answer starts a fresh exchange.
+        // This also invalidates a late OCR/AI callback from the previous one.
+        if (magicRevealText !== "" || magicAwaitingReply
+                || pendingDirectOcrKind === "magic" || magicQuestionFadeTimer.running) {
+            clearMagicPage()
+        }
+        magicQuestionOpacity = 1.0
+        var localX = x - magicInk.x
+        var localY = y - magicInk.y
+        magicCurrentStroke = [{"x": localX, "y": localY, "pressure": 1}]
+        magicInkBottomY = Math.max(magicInkBottomY, y)
+        magicInk.beginStroke(localX, localY, root.inkColor, 4, 1, true)
+    }
+    function magicAppend(x, y) {
+        if (magicCurrentStroke.length < 1) return
+        var localX = x - magicInk.x
+        var localY = y - magicInk.y
+        magicCurrentStroke.push({"x": localX, "y": localY, "pressure": 1})
+        magicInkBottomY = Math.max(magicInkBottomY, y)
+        magicInk.appendPoint(localX, localY)
+    }
+    function magicEnd(x, y) {
+        if (magicMenuPenTap) return
+        if (magicCurrentStroke.length < 1) return
+        magicAppend(x, y)
+        if (magicCurrentStroke.length > 1) {
+            magicStrokes = magicStrokes.concat([magicCurrentStroke])
+            magicStrokeRecords = magicStrokeRecords.concat([{
+                "tool": "free", "colorValue": root.inkColor,
+                "lineWidth": 4, "points": magicCurrentStroke
+            }])
+        }
+        magicCurrentStroke = []
+        magicInk.finishStroke()
+        magicPauseTimer.restart()
+    }
+    function magicAsk() {
+        if (magicStrokes.length < 1 || ocrStore.busy || aiReplyStore.busy) return
+        if (!ocrStore.configured || !aiReplyStore.configured) {
+            magicAnswer = ""
+            return
+        }
+        var batch = magicStrokes.slice()
+        // A pause defines one question. The original diary lets the paper
+        // drink the question while the cloud work begins.
+        magicStrokes = []
+        magicRevealTimer.stop()
+        magicAnswerHoldTimer.stop()
+        magicAnswerFadeTimer.stop()
+        magicReplyDraft = ""
+        magicRevealText = ""
+        magicRevealLength = 0
+        magicAnswer = ""
+        magicAnswerOpacity = 1.0
+        magicReplyComplete = false
+        magicPaperCleared = false
+        root.pendingDirectOcrKind = "magic"
+        ocrStore.clearCandidates()
+        ocrStore.recognizeStrokeBlock(batch)
+        magicQuestionFadeTimer.restart()
+    }
+
+    function clearMagicPage() {
+        magicPauseTimer.stop()
+        magicRevealTimer.stop()
+        magicQuestionFadeTimer.stop()
+        magicAnswerHoldTimer.stop()
+        magicAnswerFadeTimer.stop()
+        magicPaperClearTimer.stop()
+        magicStrokes = []
+        magicCurrentStroke = []
+        magicStrokeRecords = []
+        magicAnswer = ""
+        magicReplyDraft = ""
+        magicRevealText = ""
+        magicRevealLength = 0
+        magicAwaitingReply = false
+        magicReplyComplete = false
+        magicPaperCleared = false
+        magicQuestionOpacity = 1.0
+        magicAnswerOpacity = 1.0
+        magicReplyInk.clear()
+        magicInkBottomY = 0
+        if (pendingDirectOcrKind === "magic") {
+            pendingDirectOcrKind = ""
+            pendingDirectOcrBookId = ""
+            pendingDirectOcrPageIndex = -1
+            pendingDirectOcrItemId = ""
+        }
+        magicInk.clearLive()
+    }
+
+    function openMagicBook() {
+        clearMagicPage()
+        magicMenuOpen = false
+        magicMenuPenTap = false
+        screenName = "magic"
+    }
+
     function recognizeReaderInkBlock(block) {
         if (!block || !block.blockId) {
             return
@@ -3585,6 +3929,64 @@ Window {
         root.readerSelectedInkBlockId = String(block.blockId)
         root.beginDirectHandwritingOcr("block", String(block.blockId),
                                        block.strokes || [], root.pageIndex)
+    }
+
+    function beginPausedAiHandwriting() {
+        if (!root.readerAiHandwritingMode || root.currentFreeNotePoints.length > 0
+                || root.pendingDirectOcrKind !== "" || ocrStore.busy || aiReplyStore.busy) {
+            return
+        }
+        root.flushPendingFreeInkStrokes()
+        var blocks = readerStore.pageInkBlocks || []
+        if (blocks.length < 1) {
+            return
+        }
+        var block = blocks[blocks.length - 1] || ({})
+        if (!block.blockId || !(block.strokes || []).length) {
+            return
+        }
+        // Subsequent writing is intentionally a new sentence/block, rather
+        // than becoming part of the one already sent to the cloud.
+        root.readerForceNewFreeInkGroup = true
+        root.readerSelectedInkBlockId = String(block.blockId)
+        root.beginDirectHandwritingOcr("ai", String(block.blockId), block.strokes || [], root.pageIndex)
+    }
+
+    function askReaderInkBlockAi(block) {
+        if (!block || !block.blockId) {
+            return
+        }
+        root.readerSelectedInkBlockId = String(block.blockId)
+        if (String(block.ocrText || "").trim() !== "") {
+            root.beginAiHandwritingReply(root.currentBookId, root.pageIndex, String(block.blockId), block.ocrText)
+            return
+        }
+        root.beginDirectHandwritingOcr("ai", String(block.blockId), block.strokes || [], root.pageIndex)
+    }
+
+    function beginAiHandwritingReply(bookId, pageIndex, blockId, question) {
+        if (!aiReplyStore.configured) {
+            root.showReaderOcrStatus("请先到“我的”配置 DeepSeek", true)
+            return
+        }
+        root.readerAiPendingBookId = String(bookId || "")
+        root.readerAiPendingPageIndex = Math.max(0, Math.floor(Number(pageIndex) || 0))
+        root.readerAiPendingBlockId = String(blockId || "")
+        root.readerAiReplyDraft = ""
+        root.readerAiRevealBlockId = root.readerAiPendingBlockId
+        root.readerAiRevealText = ""
+        root.readerAiRevealLength = 0
+        root.showReaderOcrStatus("AI 正在思考…", false)
+        aiReplyStore.requestReply(String(question || ""))
+    }
+
+    function readerAiReplyDisplay(block) {
+        var reply = String((block || {}).aiReply || "")
+        if (String((block || {}).blockId || "") === root.readerAiRevealBlockId
+                && root.readerAiRevealText !== "") {
+            return root.readerAiRevealText.slice(0, root.readerAiRevealLength)
+        }
+        return reply
     }
 
     function recognizeParagraphNote(note) {
@@ -3622,6 +4024,14 @@ Window {
                 root.keyboardCandidatePage = 0
                 root.keyboardHandwritingStatus = ocrStore.status || "没有识别到文字"
             }
+        } else if (root.pendingDirectOcrKind === "magic") {
+            if (result !== "") {
+                root.magicAnswer = ""
+                root.magicAwaitingReply = true
+                aiReplyStore.requestReply(result, root.magicPersonaChoice)
+            } else {
+                root.magicAnswer = ""
+            }
         } else if (result !== "") {
             if (root.pendingDirectOcrKind === "block") {
                 readerStore.setPageInkBlockOcrText(root.pendingDirectOcrBookId,
@@ -3631,8 +4041,17 @@ Window {
             } else if (root.pendingDirectOcrKind === "note") {
                 readerStore.setParagraphNoteOcrText(root.pendingDirectOcrBookId,
                                                     root.pendingDirectOcrItemId, result)
+            } else if (root.pendingDirectOcrKind === "ai") {
+                readerStore.setPageInkBlockOcrText(root.pendingDirectOcrBookId,
+                                                   root.pendingDirectOcrPageIndex,
+                                                   root.pendingDirectOcrItemId, result)
+                root.beginAiHandwritingReply(root.pendingDirectOcrBookId,
+                                             root.pendingDirectOcrPageIndex,
+                                             root.pendingDirectOcrItemId, result)
             }
-            root.showReaderOcrStatus("识别完成，文字已附在笔迹旁", true)
+            if (root.pendingDirectOcrKind !== "ai") {
+                root.showReaderOcrStatus("识别完成，文字已附在笔迹旁", true)
+            }
         } else {
             root.showReaderOcrStatus(ocrStore.status || "没有识别到文字", true)
         }
@@ -3648,6 +4067,111 @@ Window {
         function onHandwritingRecognitionFinished(succeeded) {
             root.finishDirectHandwritingOcr(succeeded)
         }
+    }
+
+    Connections {
+        target: aiReplyStore
+        function onReplySentenceReady(sentence) {
+            if (root.magicAwaitingReply) {
+                var remaining = root.magicAnswerMaxCharacters - root.magicReplyDraft.length
+                if (remaining <= 0) return
+                root.magicReplyDraft += String(sentence || "").slice(0, remaining)
+                root.magicAnswer = root.magicReplyDraft
+                return
+            }
+            if (root.readerAiPendingBlockId === "") {
+                return
+            }
+            root.readerAiReplyDraft = (root.readerAiReplyDraft + String(sentence || "")).trim()
+            root.readerAiRevealText = root.readerAiReplyDraft
+            readerStore.setPageInkBlockAiReply(root.readerAiPendingBookId,
+                                               root.readerAiPendingPageIndex,
+                                               root.readerAiPendingBlockId,
+                                               root.readerAiReplyDraft)
+            readerAiRevealTimer.start()
+            root.showReaderOcrStatus("AI 正在书写…", false)
+        }
+        function onReplyFinished(succeeded) {
+            if (root.magicAwaitingReply) {
+                root.magicAwaitingReply = false
+                if (!succeeded && root.magicReplyDraft === "") root.magicAnswer = ""
+                root.magicReplyComplete = succeeded && root.magicReplyDraft !== ""
+                if (root.magicReplyComplete && root.magicPaperCleared) magicPaperClearTimer.restart()
+                return
+            }
+            if (root.readerAiPendingBlockId === "") {
+                return
+            }
+            root.showReaderOcrStatus(succeeded ? "AI 回复已写在笔记旁" : aiReplyStore.status, true)
+            root.readerAiPendingBookId = ""
+            root.readerAiPendingPageIndex = -1
+            root.readerAiPendingBlockId = ""
+        }
+    }
+
+    Timer {
+        id: readerAiRevealTimer
+        interval: 38
+        repeat: true
+        onTriggered: {
+            if (root.readerAiRevealLength >= root.readerAiRevealText.length) {
+                stop()
+            } else {
+                root.readerAiRevealLength += 1
+            }
+        }
+    }
+    Timer { id: magicPauseTimer; interval: 2600; repeat: false; onTriggered: root.magicAsk() }
+    Timer {
+        id: magicQuestionFadeTimer
+        interval: 160
+        repeat: true
+        onTriggered: {
+            root.magicQuestionOpacity = Math.max(0, root.magicQuestionOpacity - 0.1)
+            if (root.magicQuestionOpacity > 0) return
+            stop()
+            root.magicStrokeRecords = []
+            magicInk.clearLive()
+            root.magicInkBottomY = 0
+            root.magicPaperCleared = true
+            magicPaperClearTimer.restart()
+        }
+    }
+    Timer {
+        id: magicPaperClearTimer
+        // Wait through the final Qt/e-paper composition after the question
+        // layer is cleared.  The reply must never share a visible page with
+        // the writer's question.
+        interval: 720
+        repeat: false
+        onTriggered: {
+            if (root.magicPaperCleared && root.magicReplyComplete
+                    && root.magicReplyDraft !== "") magicRevealTimer.start()
+        }
+    }
+    Timer {
+        id: magicRevealTimer
+        // Let the question fade settle first.  The native writer below then
+        // draws its own skeleton paths at pen speed; QML Text never animates.
+        interval: 120
+        repeat: false
+        onTriggered: {
+            if (root.magicReplyComplete && root.magicReplyDraft !== "")
+                magicReplyInk.begin(root.magicReplyDraft, root.magicFontPath,
+                                    root.magicNotebookAnswerFontPixels, root.magicNotebookLinePitch)
+        }
+    }
+    Timer {
+        id: magicAnswerHoldTimer
+        interval: 3600
+        repeat: false
+        onTriggered: magicAnswerFadeTimer.start()
+    }
+    Timer {
+        id: magicAnswerFadeTimer
+        interval: 1
+        repeat: false
+        onTriggered: magicReplyInk.fade()
     }
 
     Timer {
@@ -4228,10 +4752,10 @@ Window {
             }
         }
 
-        var fontChoices = ["系统", "微米黑", "正黑", "霞鹜文楷"]
+        var fontChoices = ["系统", "微米黑", "正黑", "霞鹜文楷", "思源黑体", "思源宋体", "寒蝉正楷", "寒蝉活宋", "马善政", "刘建毛草", "智勇行", "龙藏体", "站酷快乐"]
         for (var f = 0; f < fontChoices.length; f++) {
-            var fontX = 132 + f * (132 + 12)
-            if (root.readerPointInRect(lx, ly, fontX, 552, 140, 56)) {
+            var fontX = 124 + f * (78 + 3)
+            if (root.readerPointInRect(lx, ly, fontX, 552, 78, 56)) {
                 root.readerFontChoice = fontChoices[f]
                 root.applyReaderSettingChange(true)
                 return true
@@ -4240,7 +4764,7 @@ Window {
 
         var weightValues = [Font.DemiBold, Font.Bold]
         for (var w = 0; w < weightValues.length; w++) {
-            var weightX = 772 + w * (52 + 8)
+            var weightX = 840 + w * (52 + 6)
             if (root.readerPointInRect(lx, ly, weightX, 552, 60, 56)) {
                 root.readerFontWeight = weightValues[w]
                 root.applyReaderSettingChange(true)
@@ -4487,7 +5011,7 @@ Window {
         target: stylusStore
         property: "active"
         value: !root.sleepOverlayVisible
-            && (root.screenName === "reader"
+            && (root.screenName === "reader" || root.screenName === "magic"
                 || root.showSoftKeyboard)
     }
 
@@ -4501,21 +5025,38 @@ Window {
     Connections {
         target: stylusStore
         function onStylusPressed(x, y, pressure) {
+            if (root.screenName === "magic") {
+                root.magicBegin(x, y)
+                return
+            }
             if (!root.beginKeyboardHandwritingStroke(x, y)) {
                 root.beginStylusStroke(x, y, pressure)
             }
         }
         function onStylusMoved(x, y, pressure) {
+            if (root.screenName === "magic") {
+                root.magicAppend(x, y)
+                return
+            }
             if (!root.appendKeyboardHandwritingStroke(x, y)) {
                 root.appendStylusStroke(x, y, pressure)
             }
         }
         function onStylusReleased(x, y, pressure) {
+            if (root.screenName === "magic") {
+                root.magicEnd(x, y)
+                return
+            }
             if (!root.endKeyboardHandwritingStroke(x, y)) {
                 root.endStylusStroke(x, y, pressure)
             }
         }
         function onStylusTapped(x, y) {
+            if (root.screenName === "magic" && root.magicMenuPenTap) {
+                root.magicMenuPenTap = false
+                root.magicMenuOpen = !root.magicMenuOpen
+                return
+            }
             if (!root.showSoftKeyboard || !root.keyboardHandwritingMode) {
                 root.handleStylusTap(x, y)
             }
@@ -5548,7 +6089,7 @@ Window {
                     Text {
                         width: parent.width
                         height: 44
-                        text: "百度 OCR（云端）"
+                        text: "云端识别与 AI 手写回复"
                         color: root.inkColor
                         font.pixelSize: 28
                         font.bold: true
@@ -5558,6 +6099,15 @@ Window {
                     Text {
                         width: parent.width
                         text: ocrStore.status
+                        color: root.inkColor
+                        font.pixelSize: 20
+                        font.bold: true
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: aiReplyStore.status
                         color: root.inkColor
                         font.pixelSize: 20
                         font.bold: true
@@ -5574,7 +6124,7 @@ Window {
 
                         Text {
                             anchors.fill: parent
-                            text: ocrSetupServer.running ? "浏览器配置服务已开启" : "开启浏览器配置"
+                            text: ocrSetupServer.running ? "浏览器配置服务已开启" : "开启浏览器配置（百度 OCR / DeepSeek）"
                             color: ocrSetupServer.running ? root.inkColor : "#ffffff"
                             font.pixelSize: 23
                             font.bold: true
@@ -5584,7 +6134,7 @@ Window {
 
                         MouseArea {
                             anchors.fill: parent
-                            enabled: !ocrSetupServer.running && !ocrStore.busy
+                            enabled: !ocrSetupServer.running && !ocrStore.busy && !aiReplyStore.busy
                             onClicked: ocrSetupServer.start()
                         }
                     }
@@ -5652,7 +6202,7 @@ Window {
                     Text {
                         width: parent.width
                         visible: !ocrSetupServer.running
-                        text: "只在你点开启后临时运行。浏览器首次会提示临时安全证书；API Key 不会显示在设备或日志中。"
+                        text: "只在你点开启后临时运行。一次只更新你提交的百度 OCR 或 DeepSeek 配置；另一项不会被清除。浏览器首次会提示临时安全证书。"
                         color: root.inkColor
                         font.pixelSize: 18
                         wrapMode: Text.WordWrap
@@ -6289,9 +6839,9 @@ Window {
 
             Row {
                 anchors.centerIn: parent
-                spacing: 96
+                spacing: 48
                 Repeater {
-                    model: ["书架", "发现", "我的"]
+                    model: ["书架", "发现", "我的", "魔法笔记本"]
                     Text {
                         width: 116
                         text: modelData
@@ -6302,11 +6852,222 @@ Window {
                         verticalAlignment: Text.AlignVCenter
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: root.shelfTab = modelData
+                            onClicked: {
+                                if (modelData === "魔法笔记本") {
+                                    root.openMagicBook()
+                                } else {
+                                    root.shelfTab = modelData
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+
+    Item {
+        id: magicPage
+        anchors.fill: parent
+        visible: root.screenName === "magic"
+        Rectangle { anchors.fill: parent; color: root.paperColor }
+        // A quiet ruled-paper layer: it stays behind both live pen ink and
+        // the answer, while the answer baseline follows the same pitch.
+        Item {
+            id: magicNotebookRules
+            anchors.fill: parent
+            z: 0
+            Repeater {
+                model: Math.max(0, Math.ceil((parent.height - root.magicNotebookFirstBaselineY - 40)
+                                              / root.magicNotebookLinePitch))
+                Item {
+                    x: 48
+                    y: root.magicNotebookFirstBaselineY + index * root.magicNotebookLinePitch
+                    width: parent.width - 96
+                    height: 2
+                    Repeater {
+                        model: Math.ceil(parent.width / 15)
+                        Rectangle {
+                            x: index * 15
+                            y: 0
+                            width: 7
+                            height: 1
+                            // Keep a real dark source colour: some monochrome
+                            // compositor builds quantise a pale source plus
+                            // alpha to paper white.  The result is still a
+                            // quiet, transparent-looking notebook rule.
+                            color: "#303030"
+                            opacity: 0.42
+                        }
+                    }
+                }
+            }
+        }
+        // The diary starts as an unframed sheet of paper.  The upper half is
+        // the writing field; the reply appears beneath it without status UI.
+        InkCanvas {
+            id: magicInk
+            x: 0
+            y: 0
+            width: root.width
+            height: root.magicWritingHeight
+            strokes: root.magicStrokeRecords
+            opacity: root.magicQuestionOpacity
+        }
+        MouseArea {
+            anchors.left: magicInk.left
+            anchors.top: magicInk.top
+            width: magicInk.width
+            height: magicInk.height
+            acceptedButtons: Qt.LeftButton
+            // On-device pen strokes come from StylusStore.  Keeping this
+            // fallback disabled while it is active prevents a finger/palm
+            // from becoming a second handwriting source.
+            enabled: !stylusStore.active && !root.magicMenuOpen
+            onPressed: function(m) { root.magicBegin(m.x + magicInk.x, m.y + magicInk.y) }
+            onPositionChanged: function(m) { root.magicAppend(m.x + magicInk.x, m.y + magicInk.y) }
+            onReleased: function(m) { root.magicEnd(m.x + magicInk.x, m.y + magicInk.y) }
+        }
+        Text {
+            id: magicReplyText
+            x: 62
+            y: root.magicNotebookAnswerTop
+            width: root.width - 124
+            height: root.height - y - 106
+            // The native MagicReplyInk item renders the answer directly into
+            // the e-paper buffer.  Keeping this item invisible prevents QML
+            // from coalescing glyph updates into word-sized refreshes.
+            text: ""
+            visible: false
+            color: root.inkColor
+            opacity: root.magicAnswerOpacity
+            font.family: root.magicFontFamily
+            font.pixelSize: root.magicNotebookAnswerFontPixels
+            wrapMode: Text.WordWrap
+            lineHeight: 1.08
+            maximumLineCount: 13
+            rotation: root.magicReplyTilt
+            transformOrigin: Item.TopLeft
+        }
+        MagicReplyInk {
+            id: magicReplyInk
+            x: magicReplyText.x
+            y: magicReplyText.y
+            width: magicReplyText.width
+            height: magicReplyText.height
+            onFinished: {
+                if (root.magicReplyComplete) magicAnswerHoldTimer.restart()
+            }
+            onFaded: root.clearMagicPage()
+        }
+        // The only persistent control is a pen-triggered, low-chrome
+        // settings affordance.  It is large enough to find without turning
+        // the paper into a conventional app screen.
+        Rectangle {
+            id: magicMenuDot
+            x: root.width - 104
+            y: root.height - 92
+            width: 70
+            height: 34
+            radius: height / 2
+            color: root.surfaceColor
+            border.color: root.mutedInk
+            border.width: 1
+            opacity: root.magicMenuOpen ? 0.92 : 0.72
+            z: 21
+            Text { anchors.centerIn: parent; text: "设置"; color: root.mutedInk; font.pixelSize: 16 }
+        }
+        Rectangle {
+            id: magicMenuPanel
+            x: 34
+            y: root.height - height - 56
+            width: root.width - 68
+            height: 366
+            visible: root.magicMenuOpen
+            z: 20
+            color: root.surfaceColor
+            opacity: 0.96
+            radius: 10
+
+            Text { x: 24; y: 14; text: "字形"; color: root.mutedInk; font.pixelSize: 16 }
+            Row {
+                x: 22
+                y: 40
+                spacing: 8
+                Repeater {
+                    model: ["霞鹜文楷", "马善政", "刘建毛草", "智勇行", "龙藏体", "站酷快乐"]
+                    Rectangle {
+                        width: 130
+                        height: 44
+                        radius: 6
+                        color: root.magicFontChoice === modelData ? root.inkColor : "transparent"
+                        Text { anchors.centerIn: parent; text: modelData; color: root.magicFontChoice === modelData ? root.paperColor : root.inkColor; font.pixelSize: 16 }
+                        MouseArea { anchors.fill: parent; onClicked: root.magicFontChoice = modelData }
+                    }
+                }
+            }
+            Rectangle { x: 22; y: 98; width: parent.width - 44; height: 1; color: root.quietLine; opacity: 0.2 }
+            Text { x: 24; y: 110; text: "人设"; color: root.mutedInk; font.pixelSize: 16 }
+            Grid {
+                x: 22
+                y: 136
+                columns: 3
+                columnSpacing: 8
+                rowSpacing: 8
+                Repeater {
+                    model: ["温柔笔友", "神秘日记", "福尔摩斯·贝克街", "林黛玉·潇湘馆", "苏轼·东坡居士", "居里夫人·巴黎", "爱丽丝·梦游仙境"]
+                    Rectangle {
+                        width: 280
+                        height: 40
+                        radius: 6
+                        color: root.magicPersonaChoice === modelData ? root.inkColor : "transparent"
+                        Text { anchors.centerIn: parent; text: modelData; color: root.magicPersonaChoice === modelData ? root.paperColor : root.inkColor; font.pixelSize: 16 }
+                        MouseArea { anchors.fill: parent; onClicked: root.magicPersonaChoice = modelData }
+                    }
+                }
+            }
+            Rectangle { x: 22; y: 286; width: parent.width - 44; height: 1; color: root.quietLine; opacity: 0.2 }
+            Row {
+                x: 22
+                y: 304
+                spacing: 14
+                Repeater {
+                    model: ["清空纸页", "返回书架", "收起"]
+                    Rectangle {
+                        width: modelData === "返回书架" ? 150 : 118
+                        height: 48
+                        radius: 6
+                        color: "transparent"
+                        Text { anchors.centerIn: parent; text: modelData; color: root.inkColor; font.pixelSize: 18 }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (modelData === "清空纸页") {
+                                    root.clearMagicPage()
+                                    root.magicMenuOpen = false
+                                } else if (modelData === "返回书架") {
+                                    root.magicMenuOpen = false
+                                    root.screenName = "shelf"
+                                } else {
+                                    root.magicMenuOpen = false
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // The raw stylus input remains active under this layer; it only
+        // consumes touch while the pen is in range so a palm cannot clear
+        // the page or trigger any of its controls.
+        MouseArea {
+            anchors.fill: parent
+            z: 20
+            visible: stylusStore.palmRejectionActive && !root.magicMenuOpen
+            preventStealing: true
+            onPressed: function(mouse) { mouse.accepted = true }
+            onPositionChanged: function(mouse) { mouse.accepted = true }
+            onReleased: function(mouse) { mouse.accepted = true }
         }
     }
 
@@ -7387,13 +8148,38 @@ Window {
             }
         }
 
+        // Keep a hidden QTextDocument in the same scene and font path as the
+        // visible reader. Pagination uses its painted height to choose a safe
+        // page end before any text is clipped near the footer.
+        TextEdit {
+            id: readerPageMeasure
+            x: -root.width - 32
+            y: -root.height - 32
+            width: root.readerTextWidth()
+            height: Math.max(1, root.readerTextViewportHeight(root.readerTextTopMargin))
+            opacity: 0
+            enabled: false
+            readOnly: true
+            activeFocusOnPress: false
+            selectByMouse: false
+            selectByKeyboard: false
+            cursorVisible: false
+            focus: false
+            textFormat: TextEdit.RichText
+            color: root.paperColor
+            font.pixelSize: root.readerFontSize
+            font.family: root.readerFontFamily
+            font.weight: root.readerFontWeight
+            wrapMode: TextEdit.Wrap
+        }
+
         TextEdit {
             id: readerBodyText
             x: root.readerMargin
             y: root.currentReaderTextTopY
             z: 2
             width: root.readerTextWidth()
-            height: root.readerBodyHeight(root.currentReaderTextTopY)
+            height: root.readerTextViewportHeight(root.currentReaderTextTopY)
             text: root.formatReaderText(root.currentReaderPageText, root.currentReaderTextStart, root.currentReaderTextEnd) + "<!--" + root.forceReaderRefresh + "-->"
             textFormat: TextEdit.RichText
             color: "#111111"
@@ -7812,6 +8598,40 @@ Window {
                             onClicked: root.recognizeReaderInkBlock(inkBlock)
                         }
                     }
+
+                    Rectangle {
+                        id: readerAiReplyCard
+                        property string renderedReply: root.readerAiReplyDisplay(inkBlock)
+                        visible: renderedReply !== "" && !root.readerOcrBlockSelection
+                        x: root.clamp(Number(inkBlock.x || 0), 18, root.width - 378)
+                        y: root.clamp(Number(inkBlock.y || 0) + Number(inkBlock.height || 0)
+                                      + (inkBlock.ocrText ? 66 : 12),
+                                      root.readerTextTopMargin, root.readerContentBottom - height)
+                        width: Math.min(360, root.width - x - 18)
+                        height: Math.min(176, Math.max(58, readerAiReplyText.contentHeight + 18))
+                        radius: 7
+                        color: root.paperColor
+                        border.color: root.readerMarkerColor
+                        border.width: 1
+                        z: 2
+                        clip: true
+
+                        Text {
+                            id: readerAiReplyText
+                            anchors.fill: parent
+                            anchors.margins: 9
+                            text: readerAiReplyCard.renderedReply
+                            color: "#34302a"
+                            font.family: lxgwWenKaiFont.status === FontLoader.Ready
+                                ? lxgwWenKaiFont.name : root.readerFontFamily
+                            font.pixelSize: 21
+                            wrapMode: Text.WordWrap
+                            lineHeight: 1.22
+                            maximumLineCount: 5
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
                 }
             }
 
@@ -7828,7 +8648,7 @@ Window {
                     return root.clamp(Number(inkBlock.y || 0) + Number(inkBlock.height || 0) + 18,
                                       root.readerTextTopMargin, root.readerContentBottom - height)
                 }
-                width: 318
+                width: 408
                 height: 58
                 radius: 10
                 color: root.paperColor
@@ -7842,12 +8662,13 @@ Window {
                     Repeater {
                         model: [
                             {"label": "识别", "action": "ocr"},
+                            {"label": "AI 回复", "action": "ai"},
                             {"label": "删除", "action": "delete"},
                             {"label": "取消", "action": "cancel"}
                         ]
 
                         Rectangle {
-                            width: readerInkBlockActions.width / 3
+                            width: readerInkBlockActions.width / 4
                             height: readerInkBlockActions.height
                             color: "transparent"
 
@@ -7864,7 +8685,7 @@ Window {
                                 width: 1
                                 height: parent.height - 16
                                 anchors.verticalCenter: parent.verticalCenter
-                                visible: index < 2
+                                visible: index < 3
                                 color: root.quietLine
                             }
 
@@ -7873,6 +8694,8 @@ Window {
                                 onClicked: {
                                     if (modelData.action === "ocr") {
                                         root.recognizeReaderInkBlock(readerInkBlockActions.inkBlock)
+                                    } else if (modelData.action === "ai") {
+                                        root.askReaderInkBlockAi(readerInkBlockActions.inkBlock)
                                     } else if (modelData.action === "delete") {
                                         root.deleteSelectedReaderInkBlock()
                                     } else {
@@ -8082,7 +8905,7 @@ Window {
 
                 Text {
                     anchors.centerIn: parent
-                    text: root.readerMarkerTool === "free" ? "写" : (root.readerMarkerTool === "eraser" ? "擦" : "划")
+                    text: root.readerAiHandwritingMode ? "AI" : (root.readerMarkerTool === "free" ? "写" : (root.readerMarkerTool === "eraser" ? "擦" : "划"))
                     color: root.readerMarkerTool === "eraser" ? root.inkColor : "#ffffff"
                     font.pixelSize: 13
                     font.bold: true
@@ -8134,7 +8957,8 @@ Window {
             id: readerPalmRejectionLayer
             anchors.fill: parent
             z: 10
-            visible: root.screenName === "reader" && stylusStore.palmRejectionActive
+            visible: (root.screenName === "reader" || root.screenName === "magic")
+                     && stylusStore.palmRejectionActive
             preventStealing: true
             onPressed: function(mouse) { mouse.accepted = true }
             onPositionChanged: function(mouse) { mouse.accepted = true }
@@ -8680,14 +9504,14 @@ Window {
             }
 
             Row {
-                x: 132
+                x: 124
                 y: 558
-                spacing: 12
+                spacing: 3
 
                 Repeater {
-                    model: ["系统", "微米黑", "正黑", "霞鹜文楷"]
+                    model: ["系统", "微米黑", "正黑", "霞鹜文楷", "思源黑体", "思源宋体", "寒蝉正楷", "寒蝉活宋"]
                     Rectangle {
-                        width: 132
+                        width: 78
                         height: 42
                         radius: 7
                         color: root.surfaceColor
@@ -8698,7 +9522,7 @@ Window {
                             anchors.centerIn: parent
                             text: modelData
                             color: root.readerFontChoice === modelData ? root.brandGreenDark : root.inkColor
-                            font.pixelSize: 16
+                            font.pixelSize: 13
                             font.bold: true
                         }
 
@@ -8715,7 +9539,7 @@ Window {
             }
 
             Text {
-                x: 714
+                x: 778
                 y: 566
                 text: "字重"
                 color: root.inkColor
@@ -8724,9 +9548,9 @@ Window {
             }
 
             Row {
-                x: 772
+                x: 840
                 y: 558
-                spacing: 8
+                spacing: 6
 
                 Repeater {
                     model: [

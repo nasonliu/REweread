@@ -4,6 +4,7 @@
 #include <QQmlContext>
 
 #include "account_store.h"
+#include "ai_reply_store.h"
 #include "app_control.h"
 #include "book_catalog_store.h"
 #include "discover_store.h"
@@ -39,7 +40,8 @@ int main(int argc, char *argv[]) {
     NetworkStore networkStore;
     NotesStore notesStore;
     OcrStore ocrStore;
-    OcrSetupServer ocrSetupServer(&ocrStore);
+    AiReplyStore aiReplyStore;
+    OcrSetupServer ocrSetupServer(&ocrStore, &aiReplyStore);
     PowerStore powerStore;
     ProgressSyncStore progressSyncStore;
     AccountStore accountStore;
@@ -57,6 +59,7 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("networkStore", &networkStore);
     engine.rootContext()->setContextProperty("notesStore", &notesStore);
     engine.rootContext()->setContextProperty("ocrStore", &ocrStore);
+    engine.rootContext()->setContextProperty("aiReplyStore", &aiReplyStore);
     engine.rootContext()->setContextProperty("ocrSetupServer", &ocrSetupServer);
     engine.rootContext()->setContextProperty("powerStore", &powerStore);
     engine.rootContext()->setContextProperty("progressSyncStore", &progressSyncStore);

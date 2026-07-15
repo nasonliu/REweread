@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cerrno>
 #include <climits>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <dlfcn.h>
@@ -293,6 +294,46 @@ QRect DirectInkFramebuffer::drawBlackLine(const QPointF &from, const QPointF &to
                  QPoint(qMax(x0, x1) + padding, qMax(y0, y1) + padding))
         .normalized()
         .intersected(QRect(0, 0, m_width, m_height));
+}
+
+QByteArray DirectInkFramebuffer::snapshot(const QRect &rect) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const QRect clipped = rect.intersected(QRect(0, 0, m_width, m_height));
+    if (!m_available || !m_pixels || clipped.isEmpty()) return {};
+    QByteArray out(clipped.width() * clipped.height() * 4, Qt::Uninitialized);
+    for (int y = 0; y < clipped.height(); ++y) {
+        std::memcpy(out.data() + y * clipped.width() * 4,
+                    m_pixels + (clipped.y() + y) * m_stride + clipped.x() * 4,
+                    static_cast<size_t>(clipped.width() * 4));
+    }
+    return out;
+}
+
+void DirectInkFramebuffer::restore(const QRect &rect, const QByteArray &pixels) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const QRect clipped = rect.intersected(QRect(0, 0, m_width, m_height));
+    if (!m_available || !m_pixels || clipped != rect ||
+        pixels.size() != rect.width() * rect.height() * 4) return;
+    for (int y = 0; y < rect.height(); ++y) {
+        std::memcpy(m_pixels + (rect.y() + y) * m_stride + rect.x() * 4,
+                    pixels.constData() + y * rect.width() * 4,
+                    static_cast<size_t>(rect.width() * 4));
+    }
+}
+
+void DirectInkFramebuffer::dissolve(const QRect &rect, const QByteArray &background,
+                                    int stage, int stages) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_available || !m_pixels || stages <= 0 || stage < 0 || stage >= stages ||
+        rect.isEmpty() || rect != rect.intersected(QRect(0, 0, m_width, m_height)) ||
+        background.size() != rect.width() * rect.height() * 4) return;
+    for (int y = 0; y < rect.height(); ++y) for (int x = 0; x < rect.width(); ++x) {
+        // Deterministic dispersed dots mimic ink soaking into paper without a
+        // flashing global redraw. Each pass restores one different fraction.
+        if (((x * 17 + y * 31 + x * y) % stages) != stage) continue;
+        std::memcpy(m_pixels + (rect.y() + y) * m_stride + (rect.x() + x) * 4,
+                    background.constData() + (y * rect.width() + x) * 4, 4);
+    }
 }
 
 void DirectInkFramebuffer::refreshMonoFast(const QRect &dirty) {
