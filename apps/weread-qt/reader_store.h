@@ -59,6 +59,7 @@ public:
     Q_INVOKABLE void clearPageStrokes(const QString &bookId, int pageIndex);
     Q_INVOKABLE void removePageInkBlock(const QString &bookId, int pageIndex, const QString &blockId);
     Q_INVOKABLE void setPageInkBlockOcrText(const QString &bookId, int pageIndex, const QString &blockId, const QString &text);
+    Q_INVOKABLE void setPageInkBlockAiReply(const QString &bookId, int pageIndex, const QString &blockId, const QString &text);
     Q_INVOKABLE void addParagraphNote(const QString &bookId, const QString &title, const QVariantMap &anchor, const QVariantMap &fallback, const QVariantList &points, const QString &colorName, const QString &colorValue);
     Q_INVOKABLE void setParagraphNoteOcrText(const QString &bookId, const QString &noteId, const QString &text);
     Q_INVOKABLE void removeParagraphNote(const QString &bookId, const QString &noteId);

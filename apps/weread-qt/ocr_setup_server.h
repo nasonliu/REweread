@@ -7,6 +7,7 @@
 #include <memory>
 
 class OcrStore;
+class AiReplyStore;
 class QProcess;
 class QSslCertificate;
 class QSslKey;
@@ -23,7 +24,8 @@ class OcrSetupServer : public QObject {
     Q_PROPERTY(int secondsRemaining READ secondsRemaining NOTIFY stateChanged)
 
 public:
-    explicit OcrSetupServer(OcrStore *ocrStore, QObject *parent = nullptr);
+    explicit OcrSetupServer(OcrStore *ocrStore, AiReplyStore *aiReplyStore,
+                            QObject *parent = nullptr);
     ~OcrSetupServer() override;
 
     bool running() const;
@@ -50,6 +52,7 @@ private:
     void stopServer(bool clearStatus = false);
 
     OcrStore *m_ocrStore = nullptr;
+    AiReplyStore *m_aiReplyStore = nullptr;
     TlsHttpServer *m_server = nullptr;
     QProcess *m_certificateProcess = nullptr;
     QTimer *m_countdownTimer = nullptr;
@@ -58,6 +61,7 @@ private:
     std::unique_ptr<QSslKey> m_privateKey;
     QHash<QSslSocket *, QByteArray> m_buffers;
     QPointer<QSslSocket> m_pendingSocket;
+    QString m_pendingService;
     bool m_running = false;
     QString m_setupUrl;
     QString m_pairingCode;

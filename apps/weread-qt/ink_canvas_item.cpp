@@ -17,6 +17,11 @@ constexpr qint64 kColorChaseDelayMs = 105;
 constexpr int kColorChaseTickMs = 24;
 constexpr int kFinalRefreshDelayMs = 280;
 constexpr int kDirectSwapIntervalMs = 8;
+// Let a QML Text texture reach the scene graph, then pulse the same Pen-mode
+// region once more.  Otherwise the e-paper compositor can merge several
+// character updates into a word-sized flash.
+constexpr int kFastRefreshKickDelayMs = 28;
+constexpr int kFastRefreshReleaseDelayMs = 132;
 constexpr qsizetype kPrivateScreenModeObjectBytes = 64;
 
 QPointF pointFromVariant(const QVariant &value) {
@@ -87,6 +92,16 @@ InkCanvasItem::InkCanvasItem(QQuickItem *parent)
     m_settleTimer.setInterval(kFinalRefreshDelayMs);
     connect(&m_settleTimer, &QTimer::timeout,
             this, &InkCanvasItem::finalizeInkSession);
+    m_fastRefreshKickTimer.setSingleShot(true);
+    m_fastRefreshKickTimer.setInterval(kFastRefreshKickDelayMs);
+    connect(&m_fastRefreshKickTimer, &QTimer::timeout, this, [this] {
+        updatePenModeFullRegion();
+        update(boundingRect().toAlignedRect());
+    });
+    m_fastRefreshReleaseTimer.setSingleShot(true);
+    m_fastRefreshReleaseTimer.setInterval(kFastRefreshReleaseDelayMs);
+    connect(&m_fastRefreshReleaseTimer, &QTimer::timeout,
+            this, &InkCanvasItem::hidePenModeRegion);
     m_directSwapClock.start();
     m_directSwapTimer.setSingleShot(true);
     connect(&m_directSwapTimer, &QTimer::timeout,
@@ -280,8 +295,26 @@ void InkCanvasItem::geometryChange(const QRectF &newGeometry, const QRectF &oldG
         hidePenModeRegion();
         ensureImages();
         rebuildPersistedImage();
-        update();
     }
+    update();
+}
+
+void InkCanvasItem::requestFastRefresh() {
+    if (!isVisible() || width() <= 0.0 || height() <= 0.0) {
+        return;
+    }
+    ensurePenModeItem();
+    if (!m_penModeItem) {
+        return;
+    }
+
+    // This item can be transparent.  The vendor mode item still marks its
+    // exact rectangle as a fast Pen update, so a sibling QML Text rendered in
+    // the same scene pass appears one character at a time on paper.
+    updatePenModeFullRegion();
+    update(boundingRect().toAlignedRect());
+    m_fastRefreshKickTimer.start();
+    m_fastRefreshReleaseTimer.start();
 }
 
 void InkCanvasItem::ensureImages() {
@@ -532,6 +565,23 @@ void InkCanvasItem::updatePenModeRegion() {
     m_penModeItem->setY(penBounds.y());
     m_penModeItem->setWidth(penBounds.width());
     m_penModeItem->setHeight(penBounds.height());
+    m_penModeItem->setVisible(true);
+    m_penModeItem->update();
+}
+
+void InkCanvasItem::updatePenModeFullRegion() {
+    if (!m_penModeItem) {
+        return;
+    }
+    const QRectF bounds = boundingRect();
+    if (bounds.isEmpty()) {
+        hidePenModeRegion();
+        return;
+    }
+    m_penModeItem->setX(bounds.x());
+    m_penModeItem->setY(bounds.y());
+    m_penModeItem->setWidth(bounds.width());
+    m_penModeItem->setHeight(bounds.height());
     m_penModeItem->setVisible(true);
     m_penModeItem->update();
 }

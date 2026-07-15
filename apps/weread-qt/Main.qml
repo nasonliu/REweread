@@ -30,6 +30,32 @@ Window {
     property int selectedIndex: 0
     property var detailBookOverride: ({})
     property string screenName: "shelf"
+    property var magicStrokes: []
+    property var magicCurrentStroke: []
+    property var magicStrokeRecords: []
+    property string magicAnswer: ""
+    // Keep incoming model text separate from the ink already written to the
+    // paper. This guarantees a stream chunk can never appear as a whole word.
+    property string magicReplyDraft: ""
+    property string magicRevealText: ""
+    property int magicRevealLength: 0
+    property bool magicAwaitingReply: false
+    property bool magicReplyComplete: false
+    property bool magicPaperCleared: false
+    property real magicQuestionOpacity: 1.0
+    property real magicAnswerOpacity: 1.0
+    property string magicFontChoice: "龙藏体"
+    property string magicPersonaChoice: "温柔笔友"
+    property int magicAnswerMaxCharacters: 84
+    property int magicNotebookAnswerTop: 112
+    property int magicNotebookAnswerFontPixels: 104
+    property int magicNotebookLinePitch: Math.round(magicNotebookAnswerFontPixels * 1.08)
+    property int magicNotebookFirstBaselineY: magicNotebookAnswerTop + Math.round(magicNotebookAnswerFontPixels * 0.84)
+    property bool magicMenuOpen: false
+    property bool magicMenuPenTap: false
+    property int magicWritingHeight: Math.round(root.height * 0.56)
+    property real magicInkBottomY: 0
+    property real magicReplyTilt: -0.75
     property int pageIndex: 0
     property string currentBookId: ""
     property int shelfPageIndex: 0
@@ -94,6 +120,15 @@ Window {
     property int pendingFreeInkPageIndex: -1
     property int pendingFreeInkPageCount: 1
     property int pendingFreeInkSequence: 0
+    property bool readerAiHandwritingMode: false
+    property bool readerForceNewFreeInkGroup: false
+    property string readerAiPendingBlockId: ""
+    property string readerAiPendingBookId: ""
+    property int readerAiPendingPageIndex: -1
+    property string readerAiReplyDraft: ""
+    property string readerAiRevealBlockId: ""
+    property string readerAiRevealText: ""
+    property int readerAiRevealLength: 0
     property bool showHandwrittenNotes: false
     property int readerNotesGutterWidth: 190
     property var readerCurrentLineBoxes: []
@@ -144,6 +179,7 @@ Window {
         {"id": "blue", "tool": "color", "name": "蓝", "value": "#1d5f99", "label": ""},
         {"id": "marker", "tool": "marker", "name": "荧光笔", "value": "", "label": "划"},
         {"id": "free", "tool": "free", "name": "自由写", "value": "", "label": "写"},
+        {"id": "ai", "tool": "ai", "name": "AI 回信", "value": "", "label": "AI"},
         {"id": "notes", "tool": "notes", "name": "旧笔记", "value": "", "label": "笔"},
         {"id": "ocr", "tool": "ocr", "name": "识别", "value": "", "label": "识"},
         {"id": "eraser", "tool": "eraser", "name": "橡皮", "value": "#ffffff", "label": "擦"},
@@ -175,7 +211,29 @@ Window {
                             ? chillKaiFont.name
                             : readerFontChoice === "寒蝉活宋" && chillHuoSongFont.status === FontLoader.Ready
                                 ? chillHuoSongFont.name
-                                : ""
+                                : readerFontChoice === "马善政" && maShanZhengFont.status === FontLoader.Ready
+                                    ? maShanZhengFont.name
+                                    : readerFontChoice === "刘建毛草" && liuJianMaoCaoFont.status === FontLoader.Ready
+                                        ? liuJianMaoCaoFont.name
+                                        : readerFontChoice === "智勇行" && zhiMangXingFont.status === FontLoader.Ready
+                                            ? zhiMangXingFont.name
+                                            : readerFontChoice === "龙藏体" && longCangFont.status === FontLoader.Ready
+                                                ? longCangFont.name
+                                                : readerFontChoice === "站酷快乐" && zcoolKuaiLeFont.status === FontLoader.Ready
+                                                    ? zcoolKuaiLeFont.name
+                                                    : ""
+    property string magicFontFamily: magicFontChoice === "马善政" && maShanZhengFont.status === FontLoader.Ready ? maShanZhengFont.name
+        : magicFontChoice === "刘建毛草" && liuJianMaoCaoFont.status === FontLoader.Ready ? liuJianMaoCaoFont.name
+        : magicFontChoice === "智勇行" && zhiMangXingFont.status === FontLoader.Ready ? zhiMangXingFont.name
+        : magicFontChoice === "龙藏体" && longCangFont.status === FontLoader.Ready ? longCangFont.name
+        : magicFontChoice === "站酷快乐" && zcoolKuaiLeFont.status === FontLoader.Ready ? zcoolKuaiLeFont.name
+        : lxgwWenKaiFont.name
+    property string magicFontPath: magicFontChoice === "马善政" ? "/home/root/weread-qt/fonts/ma-shan-zheng.ttf"
+        : magicFontChoice === "刘建毛草" ? "/home/root/weread-qt/fonts/liu-jian-mao-cao.ttf"
+        : magicFontChoice === "智勇行" ? "/home/root/weread-qt/fonts/zhi-mang-xing.ttf"
+        : magicFontChoice === "站酷快乐" ? "/home/root/weread-qt/fonts/zcool-kuaile.ttf"
+        : magicFontChoice === "霞鹜文楷" ? "/home/root/weread-qt/fonts/lxgw-wenkai.ttf"
+        : "/home/root/weread-qt/fonts/long-cang.ttf"
     property var readerPageStarts: [0]
     property var readerPageImages: [""]
     property var readerChapterPageLabels: ({})
@@ -265,8 +323,20 @@ Window {
         property bool wenkaiDefaultMigrated: false
     }
 
+    Settings {
+        id: persistedMagicBookSettings
+        category: "magicBook"
+        property alias fontChoice: root.magicFontChoice
+        property alias personaChoice: root.magicPersonaChoice
+        property bool longCangDefaultMigrated: false
+    }
+
     Component.onCompleted: {
         root.migrateReaderDefaults()
+        if (!persistedMagicBookSettings.longCangDefaultMigrated) {
+            root.magicFontChoice = "龙藏体"
+            persistedMagicBookSettings.longCangDefaultMigrated = true
+        }
         accountStore.refresh()
     }
 
@@ -304,6 +374,11 @@ Window {
         id: chillHuoSongFont
         source: "file:///home/root/weread-qt/fonts/chill-huosong.otf"
     }
+    FontLoader { id: maShanZhengFont; source: "file:///home/root/weread-qt/fonts/ma-shan-zheng.ttf" }
+    FontLoader { id: liuJianMaoCaoFont; source: "file:///home/root/weread-qt/fonts/liu-jian-mao-cao.ttf" }
+    FontLoader { id: zhiMangXingFont; source: "file:///home/root/weread-qt/fonts/zhi-mang-xing.ttf" }
+    FontLoader { id: longCangFont; source: "file:///home/root/weread-qt/fonts/long-cang.ttf" }
+    FontLoader { id: zcoolKuaiLeFont; source: "file:///home/root/weread-qt/fonts/zcool-kuaile.ttf" }
 
     function htmlEscape(value) {
         return String(value || "")
@@ -1449,6 +1524,15 @@ Window {
         }
     }
 
+    // A pause means the current free-ink block is ready. This timer exists
+    // only in the explicit AI tool, so ordinary notes never leave the device.
+    Timer {
+        id: readerAiHandwritingPauseTimer
+        interval: 1400
+        repeat: false
+        onTriggered: root.beginPausedAiHandwriting()
+    }
+
     Timer {
         id: readerPaginationDebounceTimer
         interval: 420
@@ -2325,8 +2409,11 @@ Window {
         if (tool.tool === "color") {
             return tool.value === root.readerMarkerColor
         }
+        if (tool.tool === "ai") {
+            return root.readerAiHandwritingMode
+        }
         if (tool.tool === "marker" || tool.tool === "free" || tool.tool === "eraser") {
-            return tool.tool === root.readerMarkerTool
+            return tool.tool === root.readerMarkerTool && !root.readerAiHandwritingMode
         }
         if (tool.tool === "notes") {
             return root.showHandwrittenNotes
@@ -2368,6 +2455,15 @@ Window {
             root.beginReaderInkBlockOcrSelection()
             return true
         }
+        if (tool.tool === "ai") {
+            root.readerMarkerTool = "free"
+            root.readerAiHandwritingMode = true
+            root.readerClearArmed = false
+            readerClearConfirmTimer.stop()
+            root.annotationMode = true
+            root.readerStylusCollapsePending = true
+            return true
+        }
         if (tool.tool === "clear") {
             if (!root.readerClearArmed) {
                 root.readerClearArmed = true
@@ -2380,6 +2476,7 @@ Window {
             return true
         }
         root.readerMarkerTool = tool.tool || "marker"
+        root.readerAiHandwritingMode = false
         root.readerClearArmed = false
         readerClearConfirmTimer.stop()
         root.readerStylusCollapsePending = true
@@ -2524,9 +2621,15 @@ Window {
                 "colorValue": root.readerMarkerColor,
                 "points": points,
                 "tool": "free",
-                "lineWidth": 4
+                "lineWidth": 4,
+                "groupId": root.readerForceNewFreeInkGroup
+                    ? "ink-" + Date.now() + "-ai" : ""
             }])
+            root.readerForceNewFreeInkGroup = false
             readerInkPersistTimer.restart()
+            if (root.readerAiHandwritingMode) {
+                readerAiHandwritingPauseTimer.restart()
+            }
         }
         root.currentFreeNotePoints = []
         root.currentFreeNoteStrokes = []
@@ -3704,6 +3807,121 @@ Window {
         ocrStore.recognizeStrokeBlock(strokes)
     }
 
+    function magicMenuDotHit(x, y) {
+        return x >= magicMenuDot.x - 14 && x <= magicMenuDot.x + magicMenuDot.width + 14
+            && y >= magicMenuDot.y - 14 && y <= magicMenuDot.y + magicMenuDot.height + 14
+    }
+
+    function magicBegin(x, y) {
+        if (magicMenuDotHit(x, y)) {
+            magicMenuPenTap = true
+            return
+        }
+        if (magicMenuOpen || x < magicInk.x || x > magicInk.x + magicInk.width
+                || y < magicInk.y || y > magicInk.y + magicInk.height) {
+            return
+        }
+        // A Chinese character is made from several pen-down strokes, so
+        // existing ink alone must never mean "start over".  Only a submitted
+        // question or an already-visible answer starts a fresh exchange.
+        // This also invalidates a late OCR/AI callback from the previous one.
+        if (magicRevealText !== "" || magicAwaitingReply
+                || pendingDirectOcrKind === "magic" || magicQuestionFadeTimer.running) {
+            clearMagicPage()
+        }
+        magicQuestionOpacity = 1.0
+        var localX = x - magicInk.x
+        var localY = y - magicInk.y
+        magicCurrentStroke = [{"x": localX, "y": localY, "pressure": 1}]
+        magicInkBottomY = Math.max(magicInkBottomY, y)
+        magicInk.beginStroke(localX, localY, root.inkColor, 4, 1, true)
+    }
+    function magicAppend(x, y) {
+        if (magicCurrentStroke.length < 1) return
+        var localX = x - magicInk.x
+        var localY = y - magicInk.y
+        magicCurrentStroke.push({"x": localX, "y": localY, "pressure": 1})
+        magicInkBottomY = Math.max(magicInkBottomY, y)
+        magicInk.appendPoint(localX, localY)
+    }
+    function magicEnd(x, y) {
+        if (magicMenuPenTap) return
+        if (magicCurrentStroke.length < 1) return
+        magicAppend(x, y)
+        if (magicCurrentStroke.length > 1) {
+            magicStrokes = magicStrokes.concat([magicCurrentStroke])
+            magicStrokeRecords = magicStrokeRecords.concat([{
+                "tool": "free", "colorValue": root.inkColor,
+                "lineWidth": 4, "points": magicCurrentStroke
+            }])
+        }
+        magicCurrentStroke = []
+        magicInk.finishStroke()
+        magicPauseTimer.restart()
+    }
+    function magicAsk() {
+        if (magicStrokes.length < 1 || ocrStore.busy || aiReplyStore.busy) return
+        if (!ocrStore.configured || !aiReplyStore.configured) {
+            magicAnswer = ""
+            return
+        }
+        var batch = magicStrokes.slice()
+        // A pause defines one question. The original diary lets the paper
+        // drink the question while the cloud work begins.
+        magicStrokes = []
+        magicRevealTimer.stop()
+        magicAnswerHoldTimer.stop()
+        magicAnswerFadeTimer.stop()
+        magicReplyDraft = ""
+        magicRevealText = ""
+        magicRevealLength = 0
+        magicAnswer = ""
+        magicAnswerOpacity = 1.0
+        magicReplyComplete = false
+        magicPaperCleared = false
+        root.pendingDirectOcrKind = "magic"
+        ocrStore.clearCandidates()
+        ocrStore.recognizeStrokeBlock(batch)
+        magicQuestionFadeTimer.restart()
+    }
+
+    function clearMagicPage() {
+        magicPauseTimer.stop()
+        magicRevealTimer.stop()
+        magicQuestionFadeTimer.stop()
+        magicAnswerHoldTimer.stop()
+        magicAnswerFadeTimer.stop()
+        magicPaperClearTimer.stop()
+        magicStrokes = []
+        magicCurrentStroke = []
+        magicStrokeRecords = []
+        magicAnswer = ""
+        magicReplyDraft = ""
+        magicRevealText = ""
+        magicRevealLength = 0
+        magicAwaitingReply = false
+        magicReplyComplete = false
+        magicPaperCleared = false
+        magicQuestionOpacity = 1.0
+        magicAnswerOpacity = 1.0
+        magicReplyInk.clear()
+        magicInkBottomY = 0
+        if (pendingDirectOcrKind === "magic") {
+            pendingDirectOcrKind = ""
+            pendingDirectOcrBookId = ""
+            pendingDirectOcrPageIndex = -1
+            pendingDirectOcrItemId = ""
+        }
+        magicInk.clearLive()
+    }
+
+    function openMagicBook() {
+        clearMagicPage()
+        magicMenuOpen = false
+        magicMenuPenTap = false
+        screenName = "magic"
+    }
+
     function recognizeReaderInkBlock(block) {
         if (!block || !block.blockId) {
             return
@@ -3711,6 +3929,64 @@ Window {
         root.readerSelectedInkBlockId = String(block.blockId)
         root.beginDirectHandwritingOcr("block", String(block.blockId),
                                        block.strokes || [], root.pageIndex)
+    }
+
+    function beginPausedAiHandwriting() {
+        if (!root.readerAiHandwritingMode || root.currentFreeNotePoints.length > 0
+                || root.pendingDirectOcrKind !== "" || ocrStore.busy || aiReplyStore.busy) {
+            return
+        }
+        root.flushPendingFreeInkStrokes()
+        var blocks = readerStore.pageInkBlocks || []
+        if (blocks.length < 1) {
+            return
+        }
+        var block = blocks[blocks.length - 1] || ({})
+        if (!block.blockId || !(block.strokes || []).length) {
+            return
+        }
+        // Subsequent writing is intentionally a new sentence/block, rather
+        // than becoming part of the one already sent to the cloud.
+        root.readerForceNewFreeInkGroup = true
+        root.readerSelectedInkBlockId = String(block.blockId)
+        root.beginDirectHandwritingOcr("ai", String(block.blockId), block.strokes || [], root.pageIndex)
+    }
+
+    function askReaderInkBlockAi(block) {
+        if (!block || !block.blockId) {
+            return
+        }
+        root.readerSelectedInkBlockId = String(block.blockId)
+        if (String(block.ocrText || "").trim() !== "") {
+            root.beginAiHandwritingReply(root.currentBookId, root.pageIndex, String(block.blockId), block.ocrText)
+            return
+        }
+        root.beginDirectHandwritingOcr("ai", String(block.blockId), block.strokes || [], root.pageIndex)
+    }
+
+    function beginAiHandwritingReply(bookId, pageIndex, blockId, question) {
+        if (!aiReplyStore.configured) {
+            root.showReaderOcrStatus("请先到“我的”配置 DeepSeek", true)
+            return
+        }
+        root.readerAiPendingBookId = String(bookId || "")
+        root.readerAiPendingPageIndex = Math.max(0, Math.floor(Number(pageIndex) || 0))
+        root.readerAiPendingBlockId = String(blockId || "")
+        root.readerAiReplyDraft = ""
+        root.readerAiRevealBlockId = root.readerAiPendingBlockId
+        root.readerAiRevealText = ""
+        root.readerAiRevealLength = 0
+        root.showReaderOcrStatus("AI 正在思考…", false)
+        aiReplyStore.requestReply(String(question || ""))
+    }
+
+    function readerAiReplyDisplay(block) {
+        var reply = String((block || {}).aiReply || "")
+        if (String((block || {}).blockId || "") === root.readerAiRevealBlockId
+                && root.readerAiRevealText !== "") {
+            return root.readerAiRevealText.slice(0, root.readerAiRevealLength)
+        }
+        return reply
     }
 
     function recognizeParagraphNote(note) {
@@ -3748,6 +4024,14 @@ Window {
                 root.keyboardCandidatePage = 0
                 root.keyboardHandwritingStatus = ocrStore.status || "没有识别到文字"
             }
+        } else if (root.pendingDirectOcrKind === "magic") {
+            if (result !== "") {
+                root.magicAnswer = ""
+                root.magicAwaitingReply = true
+                aiReplyStore.requestReply(result, root.magicPersonaChoice)
+            } else {
+                root.magicAnswer = ""
+            }
         } else if (result !== "") {
             if (root.pendingDirectOcrKind === "block") {
                 readerStore.setPageInkBlockOcrText(root.pendingDirectOcrBookId,
@@ -3757,8 +4041,17 @@ Window {
             } else if (root.pendingDirectOcrKind === "note") {
                 readerStore.setParagraphNoteOcrText(root.pendingDirectOcrBookId,
                                                     root.pendingDirectOcrItemId, result)
+            } else if (root.pendingDirectOcrKind === "ai") {
+                readerStore.setPageInkBlockOcrText(root.pendingDirectOcrBookId,
+                                                   root.pendingDirectOcrPageIndex,
+                                                   root.pendingDirectOcrItemId, result)
+                root.beginAiHandwritingReply(root.pendingDirectOcrBookId,
+                                             root.pendingDirectOcrPageIndex,
+                                             root.pendingDirectOcrItemId, result)
             }
-            root.showReaderOcrStatus("识别完成，文字已附在笔迹旁", true)
+            if (root.pendingDirectOcrKind !== "ai") {
+                root.showReaderOcrStatus("识别完成，文字已附在笔迹旁", true)
+            }
         } else {
             root.showReaderOcrStatus(ocrStore.status || "没有识别到文字", true)
         }
@@ -3774,6 +4067,111 @@ Window {
         function onHandwritingRecognitionFinished(succeeded) {
             root.finishDirectHandwritingOcr(succeeded)
         }
+    }
+
+    Connections {
+        target: aiReplyStore
+        function onReplySentenceReady(sentence) {
+            if (root.magicAwaitingReply) {
+                var remaining = root.magicAnswerMaxCharacters - root.magicReplyDraft.length
+                if (remaining <= 0) return
+                root.magicReplyDraft += String(sentence || "").slice(0, remaining)
+                root.magicAnswer = root.magicReplyDraft
+                return
+            }
+            if (root.readerAiPendingBlockId === "") {
+                return
+            }
+            root.readerAiReplyDraft = (root.readerAiReplyDraft + String(sentence || "")).trim()
+            root.readerAiRevealText = root.readerAiReplyDraft
+            readerStore.setPageInkBlockAiReply(root.readerAiPendingBookId,
+                                               root.readerAiPendingPageIndex,
+                                               root.readerAiPendingBlockId,
+                                               root.readerAiReplyDraft)
+            readerAiRevealTimer.start()
+            root.showReaderOcrStatus("AI 正在书写…", false)
+        }
+        function onReplyFinished(succeeded) {
+            if (root.magicAwaitingReply) {
+                root.magicAwaitingReply = false
+                if (!succeeded && root.magicReplyDraft === "") root.magicAnswer = ""
+                root.magicReplyComplete = succeeded && root.magicReplyDraft !== ""
+                if (root.magicReplyComplete && root.magicPaperCleared) magicPaperClearTimer.restart()
+                return
+            }
+            if (root.readerAiPendingBlockId === "") {
+                return
+            }
+            root.showReaderOcrStatus(succeeded ? "AI 回复已写在笔记旁" : aiReplyStore.status, true)
+            root.readerAiPendingBookId = ""
+            root.readerAiPendingPageIndex = -1
+            root.readerAiPendingBlockId = ""
+        }
+    }
+
+    Timer {
+        id: readerAiRevealTimer
+        interval: 38
+        repeat: true
+        onTriggered: {
+            if (root.readerAiRevealLength >= root.readerAiRevealText.length) {
+                stop()
+            } else {
+                root.readerAiRevealLength += 1
+            }
+        }
+    }
+    Timer { id: magicPauseTimer; interval: 2600; repeat: false; onTriggered: root.magicAsk() }
+    Timer {
+        id: magicQuestionFadeTimer
+        interval: 160
+        repeat: true
+        onTriggered: {
+            root.magicQuestionOpacity = Math.max(0, root.magicQuestionOpacity - 0.1)
+            if (root.magicQuestionOpacity > 0) return
+            stop()
+            root.magicStrokeRecords = []
+            magicInk.clearLive()
+            root.magicInkBottomY = 0
+            root.magicPaperCleared = true
+            magicPaperClearTimer.restart()
+        }
+    }
+    Timer {
+        id: magicPaperClearTimer
+        // Wait through the final Qt/e-paper composition after the question
+        // layer is cleared.  The reply must never share a visible page with
+        // the writer's question.
+        interval: 720
+        repeat: false
+        onTriggered: {
+            if (root.magicPaperCleared && root.magicReplyComplete
+                    && root.magicReplyDraft !== "") magicRevealTimer.start()
+        }
+    }
+    Timer {
+        id: magicRevealTimer
+        // Let the question fade settle first.  The native writer below then
+        // draws its own skeleton paths at pen speed; QML Text never animates.
+        interval: 120
+        repeat: false
+        onTriggered: {
+            if (root.magicReplyComplete && root.magicReplyDraft !== "")
+                magicReplyInk.begin(root.magicReplyDraft, root.magicFontPath,
+                                    root.magicNotebookAnswerFontPixels, root.magicNotebookLinePitch)
+        }
+    }
+    Timer {
+        id: magicAnswerHoldTimer
+        interval: 3600
+        repeat: false
+        onTriggered: magicAnswerFadeTimer.start()
+    }
+    Timer {
+        id: magicAnswerFadeTimer
+        interval: 1
+        repeat: false
+        onTriggered: magicReplyInk.fade()
     }
 
     Timer {
@@ -4354,7 +4752,7 @@ Window {
             }
         }
 
-        var fontChoices = ["系统", "微米黑", "正黑", "霞鹜文楷", "思源黑体", "思源宋体", "寒蝉正楷", "寒蝉活宋"]
+        var fontChoices = ["系统", "微米黑", "正黑", "霞鹜文楷", "思源黑体", "思源宋体", "寒蝉正楷", "寒蝉活宋", "马善政", "刘建毛草", "智勇行", "龙藏体", "站酷快乐"]
         for (var f = 0; f < fontChoices.length; f++) {
             var fontX = 124 + f * (78 + 3)
             if (root.readerPointInRect(lx, ly, fontX, 552, 78, 56)) {
@@ -4613,7 +5011,7 @@ Window {
         target: stylusStore
         property: "active"
         value: !root.sleepOverlayVisible
-            && (root.screenName === "reader"
+            && (root.screenName === "reader" || root.screenName === "magic"
                 || root.showSoftKeyboard)
     }
 
@@ -4627,21 +5025,38 @@ Window {
     Connections {
         target: stylusStore
         function onStylusPressed(x, y, pressure) {
+            if (root.screenName === "magic") {
+                root.magicBegin(x, y)
+                return
+            }
             if (!root.beginKeyboardHandwritingStroke(x, y)) {
                 root.beginStylusStroke(x, y, pressure)
             }
         }
         function onStylusMoved(x, y, pressure) {
+            if (root.screenName === "magic") {
+                root.magicAppend(x, y)
+                return
+            }
             if (!root.appendKeyboardHandwritingStroke(x, y)) {
                 root.appendStylusStroke(x, y, pressure)
             }
         }
         function onStylusReleased(x, y, pressure) {
+            if (root.screenName === "magic") {
+                root.magicEnd(x, y)
+                return
+            }
             if (!root.endKeyboardHandwritingStroke(x, y)) {
                 root.endStylusStroke(x, y, pressure)
             }
         }
         function onStylusTapped(x, y) {
+            if (root.screenName === "magic" && root.magicMenuPenTap) {
+                root.magicMenuPenTap = false
+                root.magicMenuOpen = !root.magicMenuOpen
+                return
+            }
             if (!root.showSoftKeyboard || !root.keyboardHandwritingMode) {
                 root.handleStylusTap(x, y)
             }
@@ -5674,7 +6089,7 @@ Window {
                     Text {
                         width: parent.width
                         height: 44
-                        text: "百度 OCR（云端）"
+                        text: "云端识别与 AI 手写回复"
                         color: root.inkColor
                         font.pixelSize: 28
                         font.bold: true
@@ -5684,6 +6099,15 @@ Window {
                     Text {
                         width: parent.width
                         text: ocrStore.status
+                        color: root.inkColor
+                        font.pixelSize: 20
+                        font.bold: true
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: aiReplyStore.status
                         color: root.inkColor
                         font.pixelSize: 20
                         font.bold: true
@@ -5700,7 +6124,7 @@ Window {
 
                         Text {
                             anchors.fill: parent
-                            text: ocrSetupServer.running ? "浏览器配置服务已开启" : "开启浏览器配置"
+                            text: ocrSetupServer.running ? "浏览器配置服务已开启" : "开启浏览器配置（百度 OCR / DeepSeek）"
                             color: ocrSetupServer.running ? root.inkColor : "#ffffff"
                             font.pixelSize: 23
                             font.bold: true
@@ -5710,7 +6134,7 @@ Window {
 
                         MouseArea {
                             anchors.fill: parent
-                            enabled: !ocrSetupServer.running && !ocrStore.busy
+                            enabled: !ocrSetupServer.running && !ocrStore.busy && !aiReplyStore.busy
                             onClicked: ocrSetupServer.start()
                         }
                     }
@@ -5778,7 +6202,7 @@ Window {
                     Text {
                         width: parent.width
                         visible: !ocrSetupServer.running
-                        text: "只在你点开启后临时运行。浏览器首次会提示临时安全证书；API Key 不会显示在设备或日志中。"
+                        text: "只在你点开启后临时运行。一次只更新你提交的百度 OCR 或 DeepSeek 配置；另一项不会被清除。浏览器首次会提示临时安全证书。"
                         color: root.inkColor
                         font.pixelSize: 18
                         wrapMode: Text.WordWrap
@@ -6415,9 +6839,9 @@ Window {
 
             Row {
                 anchors.centerIn: parent
-                spacing: 96
+                spacing: 48
                 Repeater {
-                    model: ["书架", "发现", "我的"]
+                    model: ["书架", "发现", "我的", "魔法笔记本"]
                     Text {
                         width: 116
                         text: modelData
@@ -6428,11 +6852,222 @@ Window {
                         verticalAlignment: Text.AlignVCenter
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: root.shelfTab = modelData
+                            onClicked: {
+                                if (modelData === "魔法笔记本") {
+                                    root.openMagicBook()
+                                } else {
+                                    root.shelfTab = modelData
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+
+    Item {
+        id: magicPage
+        anchors.fill: parent
+        visible: root.screenName === "magic"
+        Rectangle { anchors.fill: parent; color: root.paperColor }
+        // A quiet ruled-paper layer: it stays behind both live pen ink and
+        // the answer, while the answer baseline follows the same pitch.
+        Item {
+            id: magicNotebookRules
+            anchors.fill: parent
+            z: 0
+            Repeater {
+                model: Math.max(0, Math.ceil((parent.height - root.magicNotebookFirstBaselineY - 40)
+                                              / root.magicNotebookLinePitch))
+                Item {
+                    x: 48
+                    y: root.magicNotebookFirstBaselineY + index * root.magicNotebookLinePitch
+                    width: parent.width - 96
+                    height: 2
+                    Repeater {
+                        model: Math.ceil(parent.width / 15)
+                        Rectangle {
+                            x: index * 15
+                            y: 0
+                            width: 7
+                            height: 1
+                            // Keep a real dark source colour: some monochrome
+                            // compositor builds quantise a pale source plus
+                            // alpha to paper white.  The result is still a
+                            // quiet, transparent-looking notebook rule.
+                            color: "#303030"
+                            opacity: 0.42
+                        }
+                    }
+                }
+            }
+        }
+        // The diary starts as an unframed sheet of paper.  The upper half is
+        // the writing field; the reply appears beneath it without status UI.
+        InkCanvas {
+            id: magicInk
+            x: 0
+            y: 0
+            width: root.width
+            height: root.magicWritingHeight
+            strokes: root.magicStrokeRecords
+            opacity: root.magicQuestionOpacity
+        }
+        MouseArea {
+            anchors.left: magicInk.left
+            anchors.top: magicInk.top
+            width: magicInk.width
+            height: magicInk.height
+            acceptedButtons: Qt.LeftButton
+            // On-device pen strokes come from StylusStore.  Keeping this
+            // fallback disabled while it is active prevents a finger/palm
+            // from becoming a second handwriting source.
+            enabled: !stylusStore.active && !root.magicMenuOpen
+            onPressed: function(m) { root.magicBegin(m.x + magicInk.x, m.y + magicInk.y) }
+            onPositionChanged: function(m) { root.magicAppend(m.x + magicInk.x, m.y + magicInk.y) }
+            onReleased: function(m) { root.magicEnd(m.x + magicInk.x, m.y + magicInk.y) }
+        }
+        Text {
+            id: magicReplyText
+            x: 62
+            y: root.magicNotebookAnswerTop
+            width: root.width - 124
+            height: root.height - y - 106
+            // The native MagicReplyInk item renders the answer directly into
+            // the e-paper buffer.  Keeping this item invisible prevents QML
+            // from coalescing glyph updates into word-sized refreshes.
+            text: ""
+            visible: false
+            color: root.inkColor
+            opacity: root.magicAnswerOpacity
+            font.family: root.magicFontFamily
+            font.pixelSize: root.magicNotebookAnswerFontPixels
+            wrapMode: Text.WordWrap
+            lineHeight: 1.08
+            maximumLineCount: 13
+            rotation: root.magicReplyTilt
+            transformOrigin: Item.TopLeft
+        }
+        MagicReplyInk {
+            id: magicReplyInk
+            x: magicReplyText.x
+            y: magicReplyText.y
+            width: magicReplyText.width
+            height: magicReplyText.height
+            onFinished: {
+                if (root.magicReplyComplete) magicAnswerHoldTimer.restart()
+            }
+            onFaded: root.clearMagicPage()
+        }
+        // The only persistent control is a pen-triggered, low-chrome
+        // settings affordance.  It is large enough to find without turning
+        // the paper into a conventional app screen.
+        Rectangle {
+            id: magicMenuDot
+            x: root.width - 104
+            y: root.height - 92
+            width: 70
+            height: 34
+            radius: height / 2
+            color: root.surfaceColor
+            border.color: root.mutedInk
+            border.width: 1
+            opacity: root.magicMenuOpen ? 0.92 : 0.72
+            z: 21
+            Text { anchors.centerIn: parent; text: "设置"; color: root.mutedInk; font.pixelSize: 16 }
+        }
+        Rectangle {
+            id: magicMenuPanel
+            x: 34
+            y: root.height - height - 56
+            width: root.width - 68
+            height: 366
+            visible: root.magicMenuOpen
+            z: 20
+            color: root.surfaceColor
+            opacity: 0.96
+            radius: 10
+
+            Text { x: 24; y: 14; text: "字形"; color: root.mutedInk; font.pixelSize: 16 }
+            Row {
+                x: 22
+                y: 40
+                spacing: 8
+                Repeater {
+                    model: ["霞鹜文楷", "马善政", "刘建毛草", "智勇行", "龙藏体", "站酷快乐"]
+                    Rectangle {
+                        width: 130
+                        height: 44
+                        radius: 6
+                        color: root.magicFontChoice === modelData ? root.inkColor : "transparent"
+                        Text { anchors.centerIn: parent; text: modelData; color: root.magicFontChoice === modelData ? root.paperColor : root.inkColor; font.pixelSize: 16 }
+                        MouseArea { anchors.fill: parent; onClicked: root.magicFontChoice = modelData }
+                    }
+                }
+            }
+            Rectangle { x: 22; y: 98; width: parent.width - 44; height: 1; color: root.quietLine; opacity: 0.2 }
+            Text { x: 24; y: 110; text: "人设"; color: root.mutedInk; font.pixelSize: 16 }
+            Grid {
+                x: 22
+                y: 136
+                columns: 3
+                columnSpacing: 8
+                rowSpacing: 8
+                Repeater {
+                    model: ["温柔笔友", "神秘日记", "福尔摩斯·贝克街", "林黛玉·潇湘馆", "苏轼·东坡居士", "居里夫人·巴黎", "爱丽丝·梦游仙境"]
+                    Rectangle {
+                        width: 280
+                        height: 40
+                        radius: 6
+                        color: root.magicPersonaChoice === modelData ? root.inkColor : "transparent"
+                        Text { anchors.centerIn: parent; text: modelData; color: root.magicPersonaChoice === modelData ? root.paperColor : root.inkColor; font.pixelSize: 16 }
+                        MouseArea { anchors.fill: parent; onClicked: root.magicPersonaChoice = modelData }
+                    }
+                }
+            }
+            Rectangle { x: 22; y: 286; width: parent.width - 44; height: 1; color: root.quietLine; opacity: 0.2 }
+            Row {
+                x: 22
+                y: 304
+                spacing: 14
+                Repeater {
+                    model: ["清空纸页", "返回书架", "收起"]
+                    Rectangle {
+                        width: modelData === "返回书架" ? 150 : 118
+                        height: 48
+                        radius: 6
+                        color: "transparent"
+                        Text { anchors.centerIn: parent; text: modelData; color: root.inkColor; font.pixelSize: 18 }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (modelData === "清空纸页") {
+                                    root.clearMagicPage()
+                                    root.magicMenuOpen = false
+                                } else if (modelData === "返回书架") {
+                                    root.magicMenuOpen = false
+                                    root.screenName = "shelf"
+                                } else {
+                                    root.magicMenuOpen = false
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // The raw stylus input remains active under this layer; it only
+        // consumes touch while the pen is in range so a palm cannot clear
+        // the page or trigger any of its controls.
+        MouseArea {
+            anchors.fill: parent
+            z: 20
+            visible: stylusStore.palmRejectionActive && !root.magicMenuOpen
+            preventStealing: true
+            onPressed: function(mouse) { mouse.accepted = true }
+            onPositionChanged: function(mouse) { mouse.accepted = true }
+            onReleased: function(mouse) { mouse.accepted = true }
         }
     }
 
@@ -7963,6 +8598,40 @@ Window {
                             onClicked: root.recognizeReaderInkBlock(inkBlock)
                         }
                     }
+
+                    Rectangle {
+                        id: readerAiReplyCard
+                        property string renderedReply: root.readerAiReplyDisplay(inkBlock)
+                        visible: renderedReply !== "" && !root.readerOcrBlockSelection
+                        x: root.clamp(Number(inkBlock.x || 0), 18, root.width - 378)
+                        y: root.clamp(Number(inkBlock.y || 0) + Number(inkBlock.height || 0)
+                                      + (inkBlock.ocrText ? 66 : 12),
+                                      root.readerTextTopMargin, root.readerContentBottom - height)
+                        width: Math.min(360, root.width - x - 18)
+                        height: Math.min(176, Math.max(58, readerAiReplyText.contentHeight + 18))
+                        radius: 7
+                        color: root.paperColor
+                        border.color: root.readerMarkerColor
+                        border.width: 1
+                        z: 2
+                        clip: true
+
+                        Text {
+                            id: readerAiReplyText
+                            anchors.fill: parent
+                            anchors.margins: 9
+                            text: readerAiReplyCard.renderedReply
+                            color: "#34302a"
+                            font.family: lxgwWenKaiFont.status === FontLoader.Ready
+                                ? lxgwWenKaiFont.name : root.readerFontFamily
+                            font.pixelSize: 21
+                            wrapMode: Text.WordWrap
+                            lineHeight: 1.22
+                            maximumLineCount: 5
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                    }
                 }
             }
 
@@ -7979,7 +8648,7 @@ Window {
                     return root.clamp(Number(inkBlock.y || 0) + Number(inkBlock.height || 0) + 18,
                                       root.readerTextTopMargin, root.readerContentBottom - height)
                 }
-                width: 318
+                width: 408
                 height: 58
                 radius: 10
                 color: root.paperColor
@@ -7993,12 +8662,13 @@ Window {
                     Repeater {
                         model: [
                             {"label": "识别", "action": "ocr"},
+                            {"label": "AI 回复", "action": "ai"},
                             {"label": "删除", "action": "delete"},
                             {"label": "取消", "action": "cancel"}
                         ]
 
                         Rectangle {
-                            width: readerInkBlockActions.width / 3
+                            width: readerInkBlockActions.width / 4
                             height: readerInkBlockActions.height
                             color: "transparent"
 
@@ -8015,7 +8685,7 @@ Window {
                                 width: 1
                                 height: parent.height - 16
                                 anchors.verticalCenter: parent.verticalCenter
-                                visible: index < 2
+                                visible: index < 3
                                 color: root.quietLine
                             }
 
@@ -8024,6 +8694,8 @@ Window {
                                 onClicked: {
                                     if (modelData.action === "ocr") {
                                         root.recognizeReaderInkBlock(readerInkBlockActions.inkBlock)
+                                    } else if (modelData.action === "ai") {
+                                        root.askReaderInkBlockAi(readerInkBlockActions.inkBlock)
                                     } else if (modelData.action === "delete") {
                                         root.deleteSelectedReaderInkBlock()
                                     } else {
@@ -8233,7 +8905,7 @@ Window {
 
                 Text {
                     anchors.centerIn: parent
-                    text: root.readerMarkerTool === "free" ? "写" : (root.readerMarkerTool === "eraser" ? "擦" : "划")
+                    text: root.readerAiHandwritingMode ? "AI" : (root.readerMarkerTool === "free" ? "写" : (root.readerMarkerTool === "eraser" ? "擦" : "划"))
                     color: root.readerMarkerTool === "eraser" ? root.inkColor : "#ffffff"
                     font.pixelSize: 13
                     font.bold: true
@@ -8285,7 +8957,8 @@ Window {
             id: readerPalmRejectionLayer
             anchors.fill: parent
             z: 10
-            visible: root.screenName === "reader" && stylusStore.palmRejectionActive
+            visible: (root.screenName === "reader" || root.screenName === "magic")
+                     && stylusStore.palmRejectionActive
             preventStealing: true
             onPressed: function(mouse) { mouse.accepted = true }
             onPositionChanged: function(mouse) { mouse.accepted = true }

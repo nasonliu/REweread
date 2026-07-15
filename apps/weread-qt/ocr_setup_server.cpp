@@ -1,5 +1,6 @@
 #include "ocr_setup_server.h"
 
+#include "ai_reply_store.h"
 #include "ocr_store.h"
 
 #include <QFile>
@@ -70,19 +71,32 @@ QString htmlEscape(QString text) {
 }
 }
 
-OcrSetupServer::OcrSetupServer(OcrStore *ocrStore, QObject *parent)
+OcrSetupServer::OcrSetupServer(OcrStore *ocrStore, AiReplyStore *aiReplyStore, QObject *parent)
     : QObject(parent),
       m_ocrStore(ocrStore),
+      m_aiReplyStore(aiReplyStore),
       m_server(new TlsHttpServer) {
     m_server->onConnection = [this](qintptr descriptor) { acceptConnection(descriptor); };
     connect(m_ocrStore, &OcrStore::credentialVerificationFinished, this,
             [this](bool succeeded) {
-                if (!m_pendingSocket) {
+                if (!m_pendingSocket || m_pendingService != QStringLiteral("baidu")) {
                     return;
                 }
                 QSslSocket *socket = m_pendingSocket;
                 m_pendingSocket = nullptr;
                 sendHtml(socket, succeeded ? 200 : 400, resultPage(succeeded, m_ocrStore->status()));
+                if (succeeded) {
+                    QTimer::singleShot(500, this, [this]() { stopServer(); });
+                }
+            });
+    connect(m_aiReplyStore, &AiReplyStore::credentialVerificationFinished, this,
+            [this](bool succeeded) {
+                if (!m_pendingSocket || m_pendingService != QStringLiteral("deepseek")) {
+                    return;
+                }
+                QSslSocket *socket = m_pendingSocket;
+                m_pendingSocket = nullptr;
+                sendHtml(socket, succeeded ? 200 : 400, resultPage(succeeded, m_aiReplyStore->status()));
                 if (succeeded) {
                     QTimer::singleShot(500, this, [this]() { stopServer(); });
                 }
@@ -305,9 +319,16 @@ void OcrSetupServer::processRequest(QSslSocket *socket, const QByteArray &reques
     QUrlQuery form(QString::fromUtf8(body));
     const QString pairingCode = form.queryItemValue(QStringLiteral("pairingCode"));
     const QString csrfToken = form.queryItemValue(QStringLiteral("csrf"));
+    const QString service = form.queryItemValue(QStringLiteral("service"));
     const QString apiKey = form.queryItemValue(QStringLiteral("apiKey"));
     const QString secretKey = form.queryItemValue(QStringLiteral("secretKey"));
-    if (pairingCode != m_pairingCode || csrfToken != m_csrfToken || apiKey.isEmpty() || secretKey.isEmpty()) {
+    const QString deepSeekKey = form.queryItemValue(QStringLiteral("deepSeekKey"));
+    const QString deepSeekBaseUrl = form.queryItemValue(QStringLiteral("deepSeekBaseUrl"));
+    const QString deepSeekModel = form.queryItemValue(QStringLiteral("deepSeekModel"));
+    const bool validService = service == QStringLiteral("baidu") || service == QStringLiteral("deepseek");
+    const bool hasCredentials = service == QStringLiteral("baidu") ? (!apiKey.isEmpty() && !secretKey.isEmpty())
+        : (!deepSeekKey.isEmpty());
+    if (pairingCode != m_pairingCode || csrfToken != m_csrfToken || !validService || !hasCredentials) {
         ++m_failedAttempts;
         sendHtml(socket, 400, formPage(QStringLiteral("配对码或配置无效，请重试。")));
         if (m_failedAttempts >= kMaximumFailures) {
@@ -316,7 +337,12 @@ void OcrSetupServer::processRequest(QSslSocket *socket, const QByteArray &reques
         return;
     }
     m_pendingSocket = socket;
-    m_ocrStore->verifyAndSaveCredentials(apiKey, secretKey);
+    m_pendingService = service;
+    if (service == QStringLiteral("baidu")) {
+        m_ocrStore->verifyAndSaveCredentials(apiKey, secretKey);
+    } else {
+        m_aiReplyStore->verifyAndSaveCredentials(deepSeekKey, deepSeekBaseUrl, deepSeekModel);
+    }
 }
 
 void OcrSetupServer::sendHtml(QSslSocket *socket, int statusCode, const QByteArray &html, bool closeAfter) {
@@ -325,7 +351,7 @@ void OcrSetupServer::sendHtml(QSslSocket *socket, int statusCode, const QByteArr
     }
     const QByteArray status = statusCode == 200 ? "200 OK" : statusCode == 400 ? "400 Bad Request" : statusCode == 404 ? "404 Not Found" : "413 Payload Too Large";
     const QByteArray response = "HTTP/1.1 " + status + "\r\nContent-Type: text/html; charset=utf-8\r\n"
-        "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; form-action 'self'\r\n"
+        "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'\r\n"
         "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nContent-Length: "
         + QByteArray::number(html.size()) + "\r\nConnection: close\r\n\r\n" + html;
     socket->write(response);
@@ -338,13 +364,14 @@ QByteArray OcrSetupServer::formPage(const QString &notice) const {
     const QString message = notice.isEmpty() ? QStringLiteral("输入设备上显示的 6 位配对码后保存。") : notice;
     const QString html = QStringLiteral(
         "<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        "<title>reMarkable 百度 OCR 配置</title><style>body{font-family:sans-serif;max-width:34rem;margin:2rem auto;padding:0 1rem;color:#222}label{display:block;margin-top:1rem;font-weight:600}input{box-sizing:border-box;width:100%;padding:.7rem;margin-top:.35rem;font-size:1rem}button{margin-top:1.5rem;padding:.8rem 1.2rem;font-size:1rem}p{line-height:1.5}.notice{background:#f2f2f2;padding:.8rem}</style>"
-        "<h1>百度 OCR 配置</h1><p class=\"notice\">%1</p><p>凭据将直接保存到当前设备；此页面关闭、成功或取消后会立即失效。</p>"
+        "<title>reMarkable 云端服务配置</title><style>body{font-family:sans-serif;max-width:34rem;margin:2rem auto;padding:0 1rem;color:#222}label{display:block;margin-top:1rem;font-weight:600}input,select{box-sizing:border-box;width:100%;padding:.7rem;margin-top:.35rem;font-size:1rem}button{margin-top:1.5rem;padding:.8rem 1.2rem;font-size:1rem}p{line-height:1.5}.notice{background:#f2f2f2;padding:.8rem}.service{padding:.8rem;border:1px solid #ddd;margin-top:1rem}</style>"
+        "<h1>云端服务配置</h1><p class=\"notice\">%1</p><p>一次只保存一个服务；未提交的另一项配置不会被修改。</p>"
         "<form method=\"post\" action=\"/configure\" autocomplete=\"off\"><input type=\"hidden\" name=\"csrf\" value=\"%2\">"
         "<label>设备配对码<input name=\"pairingCode\" inputmode=\"numeric\" maxlength=\"6\" required></label>"
-        "<label>百度 API Key<input name=\"apiKey\" maxlength=\"512\" required></label>"
-        "<label>百度 Secret Key<input type=\"password\" name=\"secretKey\" maxlength=\"512\" required></label>"
-        "<button type=\"submit\">验证并保存</button></form></html>")
+        "<label>配置服务<select name=\"service\" id=\"service\" onchange=\"switchService()\"><option value=\"baidu\">百度 OCR</option><option value=\"deepseek\">DeepSeek AI 回复</option></select></label>"
+        "<div class=\"service\" id=\"baidu\"><label>百度 API Key<input name=\"apiKey\" maxlength=\"512\"></label><label>百度 Secret Key<input type=\"password\" name=\"secretKey\" maxlength=\"512\"></label></div>"
+        "<div class=\"service\" id=\"deepseek\" hidden><label>DeepSeek API Key<input type=\"password\" name=\"deepSeekKey\" maxlength=\"512\"></label><label>API 地址（可选）<input name=\"deepSeekBaseUrl\" placeholder=\"https://api.deepseek.com\"></label><label>模型（可选）<input name=\"deepSeekModel\" placeholder=\"deepseek-chat\"></label></div>"
+        "<button type=\"submit\">验证并保存</button></form><script>function switchService(){var select=document.getElementById('service');var deepseek=select&&select.value==='deepseek';document.getElementById('baidu').hidden=deepseek;document.getElementById('deepseek').hidden=!deepseek}switchService()</script></html>")
         .arg(htmlEscape(message), htmlEscape(m_csrfToken));
     return html.toUtf8();
 }
@@ -385,6 +412,7 @@ void OcrSetupServer::stopServer(bool clearStatus) {
         m_pendingSocket->disconnectFromHost();
         m_pendingSocket = nullptr;
     }
+    m_pendingService.clear();
     m_certificate.reset();
     m_privateKey.reset();
     m_certificateDirectory.reset();

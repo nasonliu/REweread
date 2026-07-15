@@ -52,6 +52,7 @@ const scripts = [
   'validate-free-note-anchor.mjs',
   'validate-fast-ink.mjs',
   'validate-baidu-ocr-flow.mjs',
+  'validate-ai-handwriting.mjs',
   'validate-v1-5-guides.mjs',
   'validate-weread-qt-scaffold.mjs',
   'validate-weread-qt-power-sleep.mjs',

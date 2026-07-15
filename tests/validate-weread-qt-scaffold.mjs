@@ -519,7 +519,7 @@ assert(qml.includes('id: emptyShelfState'), 'shelf must show a real empty state 
 assert(qml.includes('"同步书架"') && qml.includes('onClicked: shelfStore.refreshShelf()'), 'empty shelf state must offer real shelf sync');
 assert(qml.includes('visible: root.shelfTab === "书架" && shelfStore.books.length === 0'), 'empty shelf state must only show when no real books are loaded');
 assert(qml.includes('property string shelfTab: "书架"'), 'shelf must expose the Reader First bottom navigation state');
-assert(qml.includes('model: ["书架", "发现", "我的"]'), 'shelf must show a compact Chinese bottom navigation');
+assert(qml.includes('model: ["书架", "发现", "我的", "魔法笔记本"]'), 'shelf must show a compact Chinese bottom navigation with Magic Notebook');
 assert(qml.includes('property int shelfPageIndex'), 'shelf must track horizontal page index');
 assert(qml.includes('target: shelfStore') && qml.includes('function onBooksChanged()') && qml.includes('root.shelfPageIndex = root.clamp(root.shelfPageIndex, 0, root.shelfPageCount - 1)'), 'shelf must clamp the current page when synced books change');
 assert(!qml.includes('GridView {'), 'shelf must avoid GridView overlap on 3x3 cover layouts');
@@ -1067,7 +1067,7 @@ assert(qml.includes('networkStore.connectToSsid'), 'Profile tab must connect sca
 assert(qml.includes('networkStore.disconnectWifi()'), 'Profile tab must expose a Wi-Fi disconnect action');
 assert(qml.includes('networkStore.forgetNetwork'), 'Profile tab must expose a saved-network forget action');
 assert(qml.includes('id: wifiPasswordInput'), 'Profile tab must provide password input for scanned Wi-Fi networks');
-assert(qml.includes('onClicked: root.shelfTab = modelData'), 'bottom tabs must still navigate between real pages');
+assert(qml.includes('root.shelfTab = modelData') && qml.includes('root.openMagicBook()'), 'bottom tabs must still navigate between real pages and Magic Book');
 assert(!qml.includes('visible: modelData.coverSource === ""'), 'real covers must not be overlaid with fallback title text');
 assert(shelfStoreCpp.includes('QStringLiteral("全部下载")'), 'download-all action text must come from real download state');
 assert(qml.includes('detailPage.book.downloadState === "full"'), 'detail page must branch on the real full-download state');

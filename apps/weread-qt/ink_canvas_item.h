@@ -27,6 +27,10 @@ public:
     Q_INVOKABLE void appendPoint(double x, double y);
     Q_INVOKABLE void finishStroke();
     Q_INVOKABLE void clearLive();
+    // Request a vendor Pen-mode composition pass without accepting a stroke.
+    // Used by small e-paper text updates which must not be coalesced into a
+    // normal, slow Text refresh.
+    Q_INVOKABLE void requestFastRefresh();
 
     void paint(QPainter *painter) override;
 
@@ -65,6 +69,7 @@ private:
     void scheduleSettledRefresh(const QRectF &dirty);
     void ensurePenModeItem();
     void updatePenModeRegion();
+    void updatePenModeFullRegion();
     void hidePenModeRegion();
     bool drawDirectSegment(const LiveSegment &segment);
     void flushDirectInk();
@@ -86,6 +91,8 @@ private:
     QElapsedTimer m_liveClock;
     QTimer m_dryTimer;
     QTimer m_settleTimer;
+    QTimer m_fastRefreshKickTimer;
+    QTimer m_fastRefreshReleaseTimer;
     QElapsedTimer m_directSwapClock;
     QTimer m_directSwapTimer;
     QRect m_directDirty;

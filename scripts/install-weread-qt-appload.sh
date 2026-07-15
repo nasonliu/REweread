@@ -51,7 +51,12 @@ for font in \
   "$ROOT_DIR/downloads/fonts/stage/source-han-sans-sc/source-han-sans-sc.otf" \
   "$ROOT_DIR/downloads/fonts/stage/source-han-serif-sc/source-han-serif-sc.otf" \
   "$ROOT_DIR/downloads/fonts/stage/chill-kai/chill-kai.ttf" \
-  "$ROOT_DIR/downloads/fonts/stage/chill-huosong/chill-huosong.otf"; do
+  "$ROOT_DIR/downloads/fonts/stage/chill-huosong/chill-huosong.otf" \
+  "$ROOT_DIR/downloads/fonts/stage/ma-shan-zheng/ma-shan-zheng.ttf" \
+  "$ROOT_DIR/downloads/fonts/stage/liu-jian-mao-cao/liu-jian-mao-cao.ttf" \
+  "$ROOT_DIR/downloads/fonts/stage/zhi-mang-xing/zhi-mang-xing.ttf" \
+  "$ROOT_DIR/downloads/fonts/stage/long-cang/long-cang.ttf" \
+  "$ROOT_DIR/downloads/fonts/stage/zcool-kuaile/zcool-kuaile.ttf"; do
   if [[ ! -s "$font" ]]; then
     echo "Missing font dependency: $font" >&2
     echo "Run scripts/download-reader-fonts.sh first." >&2
@@ -80,6 +85,11 @@ ssh "$MOVE_HOST" "rm -rf '$REMOTE_STAGE' && mkdir -p '$REMOTE_STAGE/fonts' '$REM
 "${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/source-han-serif-sc/source-han-serif-sc.otf" "$MOVE_HOST:$REMOTE_STAGE/fonts/source-han-serif-sc.otf"
 "${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/chill-kai/chill-kai.ttf" "$MOVE_HOST:$REMOTE_STAGE/fonts/chill-kai.ttf"
 "${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/chill-huosong/chill-huosong.otf" "$MOVE_HOST:$REMOTE_STAGE/fonts/chill-huosong.otf"
+"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/ma-shan-zheng/ma-shan-zheng.ttf" "$MOVE_HOST:$REMOTE_STAGE/fonts/ma-shan-zheng.ttf"
+"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/liu-jian-mao-cao/liu-jian-mao-cao.ttf" "$MOVE_HOST:$REMOTE_STAGE/fonts/liu-jian-mao-cao.ttf"
+"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/zhi-mang-xing/zhi-mang-xing.ttf" "$MOVE_HOST:$REMOTE_STAGE/fonts/zhi-mang-xing.ttf"
+"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/long-cang/long-cang.ttf" "$MOVE_HOST:$REMOTE_STAGE/fonts/long-cang.ttf"
+"${SCP[@]}" "$ROOT_DIR/downloads/fonts/stage/zcool-kuaile/zcool-kuaile.ttf" "$MOVE_HOST:$REMOTE_STAGE/fonts/zcool-kuaile.ttf"
 "${SCP[@]}" -r "$ROOT_DIR/apps/weread-move/lib" "$MOVE_HOST:$REMOTE_STAGE/helper/lib"
 for tool in \
   account-status.lua \

@@ -2,6 +2,33 @@
 
 All notable changes to REweread are documented here.
 
+## [2.0.0] - 2026-07-14
+
+### Added
+
+- Explicit AI handwriting-reply pen mode: after a deliberate pause, a single
+  free-ink block is OCRed by Baidu and its text is sent to the user's DeepSeek
+  account; reply sentences reveal progressively beside the source ink in
+  LXGW WenKai.
+- The temporary browser pairing page can now configure either Baidu OCR or
+  DeepSeek. Each service has a separate owner-only credential file, and saving
+  one never clears the other.
+- New shelf-level Magic Notebook: a blank full-screen writing page sends only
+  the paused handwriting batch through Baidu OCR and DeepSeek. The writer's
+  ink first fades from the paper; the reply then draws as native skeletonized
+  pen paths with tiny framebuffer updates and fades away in local stages.
+- Added build-time, checksum-pinned OFL handwriting fonts from Google Fonts:
+  Ma Shan Zheng, Liu Jian Mao Cao, Zhi Mang Xing and Long Cang.
+- Named persona cards now define a character's name, era, background and
+  speaking style so identity questions have consistent answers.
+
+### Fixed
+
+- Magic Notebook never starts an answer until the question ink layer has
+  cleared and the e-paper compositor has settled.
+- Reply animation no longer relies on QML Text refresh batching; the first
+  glyphs no longer appear as word-sized chunks or trigger a whole-page flash.
+
 ## [1.5.0] - 2026-07-14
 
 Source-only milestone focused on Chinese input, handwriting annotations and
@@ -71,3 +98,4 @@ First source-only release candidate of the Qt application for reMarkable Paper P
 
 [1.0.0-rc.1]: https://github.com/nasonliu/REweread/releases/tag/v1.0.0-rc.1
 [1.5.0]: https://github.com/nasonliu/REweread/tree/main
+[2.0.0]: https://github.com/nasonliu/REweread/tree/main

@@ -41,6 +41,7 @@ struct InkBlockAccumulator {
     QVariantList strokes;
     QVariantList sourceIndices;
     QString ocrText;
+    QString aiReply;
 };
 
 qint64 strokeCreatedAtMs(const QVariantMap &stroke) {
@@ -132,6 +133,9 @@ QVariantList buildPageInkBlocks(const QVariantList &strokes, int pageIndex) {
         if (block.ocrText.isEmpty()) {
             block.ocrText = stroke.value(QStringLiteral("ocrText")).toString();
         }
+        if (block.aiReply.isEmpty()) {
+            block.aiReply = stroke.value(QStringLiteral("aiReply")).toString();
+        }
     }
 
     QVariantList result;
@@ -147,6 +151,7 @@ QVariantList buildPageInkBlocks(const QVariantList &strokes, int pageIndex) {
         row.insert(QStringLiteral("strokes"), block.strokes);
         row.insert(QStringLiteral("sourceIndices"), block.sourceIndices);
         row.insert(QStringLiteral("ocrText"), block.ocrText);
+        row.insert(QStringLiteral("aiReply"), block.aiReply);
         result.append(row);
     }
     return result;
@@ -667,7 +672,10 @@ void ReaderStore::addPageStrokesBatch(const QString &bookId, const QString &titl
         row.insert(QStringLiteral("createdAtMs"), createdAtMs);
         if (rowTool == QStringLiteral("free")) {
             const QRectF bounds = freeStrokeBounds(row);
-            if (!strokeJoinsBlock(currentBounds, currentAtMs, bounds, createdAtMs)) {
+            const QString requestedGroupId = request.value(QStringLiteral("groupId")).toString();
+            if (!requestedGroupId.isEmpty()) {
+                currentGroupId = requestedGroupId;
+            } else if (!strokeJoinsBlock(currentBounds, currentAtMs, bounds, createdAtMs)) {
                 currentGroupId = QStringLiteral("ink-%1-%2").arg(createdAtMs).arg(list.size());
             }
             row.insert(QStringLiteral("groupId"), currentGroupId);
@@ -776,6 +784,42 @@ void ReaderStore::setPageInkBlockOcrText(const QString &bookId, int pageIndex, c
     if (!attached) {
         return;
     }
+    strokesMap.insert(safeName(bookId), list);
+    saveStrokesMap(strokesMap);
+    loadStrokesForPage(bookId, safePageIndex);
+}
+
+void ReaderStore::setPageInkBlockAiReply(const QString &bookId, int pageIndex, const QString &blockId, const QString &text) {
+    const QString cleanText = text.trimmed();
+    if (bookId.isEmpty() || blockId.isEmpty() || cleanText.isEmpty()) {
+        return;
+    }
+    QVariantMap strokesMap = loadStrokesMap();
+    QVariantList list = strokesMap.value(safeName(bookId)).toList();
+    const int safePageIndex = qMax(0, pageIndex);
+    QVariantList sourceIndices;
+    const QVariantList blocks = buildPageInkBlocks(list, safePageIndex);
+    for (const QVariant &value : blocks) {
+        const QVariantMap block = value.toMap();
+        if (block.value(QStringLiteral("blockId")).toString() == blockId) {
+            sourceIndices = block.value(QStringLiteral("sourceIndices")).toList();
+            break;
+        }
+    }
+    if (sourceIndices.isEmpty()) return;
+    bool attached = false;
+    for (const QVariant &sourceIndexValue : sourceIndices) {
+        const qsizetype index = sourceIndexValue.toLongLong();
+        if (index >= list.size()) continue;
+        QVariantMap row = list.at(index).toMap();
+        row.remove(QStringLiteral("aiReply"));
+        if (!attached) {
+            row.insert(QStringLiteral("aiReply"), cleanText);
+            attached = true;
+        }
+        list[index] = row;
+    }
+    if (!attached) return;
     strokesMap.insert(safeName(bookId), list);
     saveStrokesMap(strokesMap);
     loadStrokesForPage(bookId, safePageIndex);
