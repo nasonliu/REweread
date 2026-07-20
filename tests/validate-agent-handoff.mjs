@@ -12,9 +12,11 @@ const handoff = read('docs/agent-handoff.md');
 const agents = read('AGENTS.md');
 const readme = read('README.md');
 const docs = read('docs/README.md');
+const version = read('VERSION').trim();
+const manifest = JSON.parse(read('release-manifest.json'));
 
 for (const required of [
-  '1.5.0',
+  version,
   'source-only',
   'VPDD',
   'systemctl suspend',
@@ -33,6 +35,20 @@ for (const required of [
 ]) {
   assert(handoff.includes(required), `handoff must preserve the ${required} operational lesson`);
 }
+
+assert(manifest.version === version, 'release manifest must match VERSION');
+assert(
+  handoff.includes(`当前源码里程碑为 \`${version}\``),
+  'handoff current milestone must match VERSION',
+);
+assert(
+  handoff.includes(`当前源码基线是 ${version} source-only 里程碑`),
+  'handoff onboarding prompt must match VERSION',
+);
+assert(
+  handoff.includes(`v${version}\` 标签或 Release`),
+  'handoff release status must match VERSION',
+);
 
 assert(handoff.includes('不要直接写 `/sys/power/state`'), 'handoff must forbid bypassing official suspend hooks');
 assert(handoff.includes('不表示内核成功休眠'), 'handoff must explain systemctl job acceptance');
