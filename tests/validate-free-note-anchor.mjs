@@ -25,7 +25,10 @@ if (normalized[0].x !== 0 || normalized[0].y !== 0) {
   throw new Error('stored ink must be normalized to its note bounds');
 }
 
-const qml = fs.readFileSync(path.join(process.cwd(), 'apps/weread-qt/Main.qml'), 'utf8');
+const qml = [
+  'Main.qml',
+  'ReaderPage.qml',
+].map((name) => fs.readFileSync(path.join(process.cwd(), 'apps/weread-qt', name), 'utf8')).join('\n');
 const readerStore = fs.readFileSync(path.join(process.cwd(), 'apps/weread-qt/reader_store.cpp'), 'utf8');
 if (!qml.includes('"tool": "free"') || !qml.includes('"tool": "notes"') || !qml.includes('readerParagraphNotePlacements')) {
   throw new Error('reader capsule must expose free handwriting and handwritten-note display modes');

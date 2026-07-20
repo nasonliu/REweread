@@ -32,7 +32,10 @@ const paged = engine.candidates('shi', 50);
 assert(paged.length > 5 && new Set(paged.map((candidate) => candidate.text)).size === paged.length, 'common syllables must provide enough unique candidates for a second page');
 assert(engine.candidates('123', 8).length === 0, 'engine must not treat non-pinyin input as composition text');
 
-const qml = fs.readFileSync(path.join(root, 'apps/weread-qt/Main.qml'), 'utf8');
+const qml = [
+  'Main.qml',
+  'SoftKeyboardPanel.qml',
+].map((name) => fs.readFileSync(path.join(root, 'apps/weread-qt', name), 'utf8')).join('\n');
 const cmake = fs.readFileSync(path.join(root, 'apps/weread-qt/CMakeLists.txt'), 'utf8');
 assert(qml.includes('import "PinyinEngine.js" as PinyinEngine'), 'Qt UI must load the self-contained pinyin engine');
 assert(cmake.includes('PinyinEngine.js') && cmake.includes('PinyinLexicon.js'), 'Qt build must package the pinyin engine with the application');

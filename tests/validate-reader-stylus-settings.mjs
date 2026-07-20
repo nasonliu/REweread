@@ -44,7 +44,10 @@ assert(cpp.includes('synthesizeTapAsMouseClick'), 'short pen taps must be conver
 assert(cpp.includes('m_tapMaxDistance'), 'stylus tap synthesis must distinguish button taps from drawing strokes by movement distance');
 assert(header.includes('stylusTapped'), 'StylusStore must expose short pen taps directly to QML for controls that do not receive synthesized mouse events');
 
-const qml = read('apps/weread-qt/Main.qml');
+const qml = [
+  'Main.qml',
+  'ReaderPage.qml',
+].map((name) => read(`apps/weread-qt/${name}`)).join('\n');
 assert(qml.includes('function readerEstimatedLinePixels() {\n        return root.readerLinePixels()\n    }'), 'reader pagination must estimate the same line pixels that rich TextEdit actually renders');
 assert(qml.includes('function readerPaginationHeightBudget(topY) {\n        return root.readerBodyHeight(topY)\n    }'), 'reader pagination must use the full body height instead of reserving a large blank bottom band');
 assert(qml.includes('paintedHeight < paginationHeight * 0.97'), 'reader layout selftest must reject pages that leave more than three percent blank space');

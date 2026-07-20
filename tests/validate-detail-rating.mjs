@@ -12,7 +12,8 @@ const detail = read('apps/weread-move/views/book_detail_view.lua');
 const shelfStore = read('apps/weread-qt/shelf_store.cpp');
 const readerStore = read('apps/weread-qt/reader_store.cpp');
 const refreshDetail = read('apps/weread-move/tools/refresh-detail.lua');
-const qml = read('apps/weread-qt/Main.qml');
+const qml = read('apps/weread-qt/BookDetailPage.qml');
+const mainQml = read('apps/weread-qt/Main.qml');
 
 assert(detail.includes('function BookDetailView:recommendationLabel'), 'book detail must normalize WeRead recommendation scores');
 assert(detail.includes('rating = rating / 10'), 'three-digit WeRead recommendation scores must render as decimal percentages');
@@ -28,6 +29,6 @@ for (const id of ['detailHero', 'detailProgressPercent', 'detailPrimaryAction', 
   assert(qml.includes(`id: ${id}`), `redesigned detail page must include ${id}`);
 }
 assert(qml.includes('text: Math.round((detailPage.book.progressRatio || 0) * 100) + "%"'), 'detail hero must render the progress as an integer percentage');
-assert(qml.includes('selfTestMode === "detail-ui"') && qml.includes('detail-ui-selftest=ready'), 'detail redesign must expose a device-rendered visual QA state');
+assert(mainQml.includes('selfTestMode === "detail-ui"') && mainQml.includes('detail-ui-selftest=ready'), 'detail redesign must expose a device-rendered visual QA state');
 
 console.log('detail rating ok');
