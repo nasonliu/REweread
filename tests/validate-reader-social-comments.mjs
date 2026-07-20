@@ -84,7 +84,10 @@ assert(notesStoreCpp.indexOf('loadCachedPopularMarks(trimmed, key)') < notesStor
 assert(notesStoreCpp.includes('loadCachedPopularReviews(trimmedBookId, trimmedChapterUid, trimmedRange)'), 'tapped comments must check persistent review cache before a network request');
 assert(notesStoreCpp.includes('^chapterIndex:(\\\\d+)') && notesStoreCpp.includes('QStringLiteral("index:%1")'), 'NotesStore must preserve local-index intent instead of sending a bare numeric UID');
 
-const qml = read('apps/weread-qt/Main.qml');
+const qml = [
+  'Main.qml',
+  'ReaderPage.qml',
+].map((name) => read(`apps/weread-qt/${name}`)).join('\n');
 const socialAnchor = read('apps/weread-qt/SocialAnchor.js');
 assert(qml.includes('showReaderSocialPopup'), 'reader must track the social comment popup');
 assert(qml.includes('readerPopularMarksForRange'), 'reader must map popular marks onto visible text ranges');
@@ -108,7 +111,7 @@ assert(qml.includes('property var readerSocialDashRects: []') && qml.includes('p
 assert(qml.includes('rebuildReaderSocialGeometry'), 'reader must rebuild cached social geometry only after the RichText layout settles');
 assert(qml.includes('reader-social-geometry dashes='), 'reader must log rendered dash counts separately from matched comment rows');
 assert(qml.includes('readerDocumentPositionForTextOffset'), 'reader must map corrected body offsets into the rendered TextEdit document');
-assert(qml.includes('readerBodyText.positionToRectangle(position)'), 'dashed underlines must use actual rendered glyph positions instead of estimated line widths');
+assert(qml.includes('readerPage.bodyText.positionToRectangle(position)'), 'dashed underlines must use actual rendered glyph positions instead of estimated line widths');
 assert(qml.includes('readerSocialHitRectsForPage'), 'reader must create hit rectangles for visible underline comments above page-turn areas');
 assert(qml.includes('openReaderSocialPopupAtPoint'), 'reader must expose coordinate-based social comment activation for stylus taps');
 assert(qml.includes('root.openReaderSocialPopupAtPoint(x, y)'), 'stylus taps must try social underline hit regions before ordinary reader gestures');
@@ -116,13 +119,13 @@ assert(qml.includes('openReaderSocialPopup'), 'reader must open a community popu
 assert(qml.includes('closeReaderSocialPopup'), 'reader must close the community popup');
 assert(qml.includes('readerSocialPopupPanel'), 'reader must render a dedicated community comment popup');
 const socialPopupSnippet = qml.slice(qml.indexOf('id: readerSocialPopupPanel'), qml.indexOf('id: readerStylusToolBar'));
-assert(socialPopupSnippet.includes('height: Math.round(root.height * 0.80)'), 'community comments must use roughly 80 percent of the screen height');
+assert(socialPopupSnippet.includes('height: Math.round(appRoot.height * 0.80)'), 'community comments must use roughly 80 percent of the screen height');
 assert(socialPopupSnippet.includes('font.pixelSize: 30'), 'community comment body must use a clearly readable e-ink font size');
 assert(qml.includes('id: readerSocialTouchLayer'), 'reader must install a dedicated underline-comment touch layer');
-assert(qml.includes('model: root.readerSocialHitRects'), 'underline-comment delegates must consume cached geometry without binding to glyph-by-glyph recalculation');
+assert(qml.includes('model: appRoot.readerSocialHitRects'), 'underline-comment delegates must consume cached geometry without binding to glyph-by-glyph recalculation');
 assert(!qml.match(/function openReaderSocialPopupAtPoint[\s\S]*?var rects = root\.readerSocialHitRectsForPage\(\)/), 'stylus hit testing must use cached geometry without recalculating TextEdit positions');
-assert(qml.includes('onReleased: root.openReaderSocialPopup(socialUnderlineDelegate.socialIndex'), 'underline-comment hit rectangles must open after release while still blocking page-turn gestures');
-assert(qml.includes('id: readerSocialPopupOutsideCloseArea') && qml.includes('onPressed: root.closeReaderSocialPopup()'), 'a stuck social popup must close immediately on an outside press');
+assert(qml.includes('onReleased: appRoot.openReaderSocialPopup(socialUnderlineDelegate.socialIndex'), 'underline-comment hit rectangles must open after release while still blocking page-turn gestures');
+assert(qml.includes('id: readerSocialPopupOutsideCloseArea') && qml.includes('onPressed: appRoot.closeReaderSocialPopup()'), 'a stuck social popup must close immediately on an outside press');
 assert(qml.includes('reader-social-open index='), 'reader must log successful social popup activation for device diagnostics');
 assert(qml.includes('selfTestMode === "reader-social"') && qml.includes('reader-social-selftest=ok'), 'reader must expose a device self-test that exercises cached social geometry');
 assert(qml.includes('selfTestMode === "reader-social-clicks"') && qml.includes('reader-social-clicks-selftest=ok'), 'reader must automate repeated underline comment opens and closes on the device');

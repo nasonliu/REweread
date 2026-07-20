@@ -8,6 +8,7 @@ const header = fs.readFileSync('apps/weread-qt/account_store.h', 'utf8');
 const source = fs.readFileSync('apps/weread-qt/account_store.cpp', 'utf8');
 const qml = fs.readFileSync('apps/weread-qt/Main.qml', 'utf8');
 const qrLogin = fs.readFileSync('apps/weread-qt/QrLoginScreen.qml', 'utf8');
+const shelfQml = fs.readFileSync('apps/weread-qt/ShelfPage.qml', 'utf8');
 const cmake = fs.readFileSync('apps/weread-qt/CMakeLists.txt', 'utf8');
 const helper = fs.readFileSync('apps/weread-move/tools/login-qr.lua', 'utf8');
 const logoutHelper = fs.readFileSync('apps/weread-move/tools/logout.lua', 'utf8');
@@ -27,7 +28,7 @@ assert(qml.includes('accountStore.refresh()') && qml.includes('accountInitialChe
 assert(qml.includes('!accountStore.cookieConfigured') && qml.includes('root.openQrLogin()'), 'missing cookies must automatically open device login');
 assert(qml.includes('function onLoginSucceeded()') && qml.includes('shelfStore.refreshShelf()'), 'successful phone confirmation must close login and sync the shelf');
 assert(qml.includes('selfTestMode === "qr-login-ui"') && qml.includes('qr-login-ui-selftest=ok'), 'device build must verify QR generation and rendering end to end');
-assert(qml.includes('切换微信读书账号') && qml.includes('登录微信读书'), 'profile must expose an easy account switch entry');
+assert(shelfQml.includes('切换微信读书账号') && qrLogin.includes('登录微信读书'), 'profile must expose an easy account switch entry');
 assert(helper.includes('/api/auth/getLoginUid') && helper.includes('/api/auth/getLoginInfo'), 'QR helper must use the current WeRead web auth polling flow');
 assert(!helper.includes('/web/login/getuid') && !helper.includes('/web/login/getinfo') && !helper.includes('/web/login/weblogin'), 'QR helper must not use the stale legacy web login endpoints');
 assert(helper.includes('/web/confirm?uid=') && helper.includes('cookies.wr_vid') && helper.includes('cookies.wr_skey'), 'QR login must use the current web confirmation URL and persist web auth cookies');
@@ -36,7 +37,7 @@ assert(header.includes('Q_INVOKABLE void logout()') && header.includes('void log
 assert(logoutHelper.includes('config:set("logged_out", true)') && logoutHelper.includes('cache_preserved = true'), 'logout must revoke only runtime authentication');
 assert(configBridge.includes('session.logged_out == true') && configBridge.includes('if not self.values.logged_out then'), 'logged-out marker must override imported legacy cookies');
 assert(helper.includes('client.settings:set("logged_out", false)'), 'successful QR login must clear the logged-out marker');
-assert(qml.includes('退出当前账号') && qml.includes('function onLoggedOut()'), 'profile logout must open a fresh QR flow');
+assert(shelfQml.includes('退出当前账号') && qml.includes('function onLoggedOut()'), 'profile logout must open a fresh QR flow');
 assert(runner.includes('tools/logout.lua'), 'device deployment must include logout helper');
 assert(installer.includes('logout.lua') && installer.includes('helper/tools/$tool'), 'persistent app installation must include logout helper');
 
