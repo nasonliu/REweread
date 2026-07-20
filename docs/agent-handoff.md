@@ -6,7 +6,7 @@
 
 ## 1. 一句话现状
 
-REweread 当前源码里程碑为 `1.5.0`：Qt 产品已加入拼音候选翻页、百度 OCR 手写输入、页内自由笔迹、块级 OCR、直接帧缓冲快速墨迹和防手掌误触。1.5 源码已通过完整静态验证、官方 chiappa SDK 构建，并在当前测试设备上完成连续迭代启动验证；仍未创建 `v1.5.0` 标签或公开二进制。
+REweread 当前源码里程碑为 `2.0.0`：Qt 产品在 1.5 的拼音输入、百度 OCR、页内自由笔迹和快速墨迹基础上，加入了 DeepSeek 手写回复、Magic Notebook、凭据分离配置和原生笔迹回复动画。2.0 源码已通过完整静态验证，仍未创建 `v2.0.0` 标签或公开二进制；官方 chiappa SDK 构建和真机验证状态以 `docs/releases/v2.0.0.md` 为准。
 
 它仍不是可面向普通用户广泛分发的正式产品。当前存在服务授权、上游许可证、干净设备安装/卸载和长期电池测试等阻塞项。
 
@@ -26,7 +26,7 @@ for file in scripts/*.sh apps/weread-move/*.sh; do bash -n "$file"; done
 预期：
 
 - 基线来自 `main`。
-- `VERSION` 为 `1.5.0`。
+- `VERSION` 与 `release-manifest.json`、`CHANGELOG.md` 和当前 `docs/releases/v<version>.md` 一致，当前为 `2.0.0`。
 - 安全检查和静态验证全部通过。
 - 不存在 SDK、字体、构建目录、第三方 checkout 或用户数据的待提交文件。
 
@@ -45,10 +45,10 @@ for file in scripts/*.sh apps/weread-move/*.sh; do bash -n "$file"; done
 
 发布状态：
 
-- `1.5.0` 是当前 source-only 源码里程碑；提交源码不等于发布普通用户二进制。
+- `2.0.0` 是当前 source-only 源码里程碑；提交源码不等于发布普通用户二进制。
 - GitHub PR #1 已合并，保留 `1.0.0-rc.1` 的历史记录。
 - `v1.0.0-rc.1` 是 Draft prerelease 名称，不是公开标签。
-- 未创建 `v1.5.0` 标签或 Release；不要因为 `VERSION` 已更新就自动发布。
+- 未创建 `v2.0.0` 标签或 Release；不要因为 `VERSION` 已更新就自动发布。
 - Draft 中只附源码归档和 `SHA256SUMS.txt`。
 - 源码归档 SHA-256：`2eaf1c08db968606ac539edc2247e1c3aad267cdb3ca6ab9538b323fd1e571d8`。
 - 不得擅自把 Draft 点成 Publish，也不得附加应用二进制或依赖包。
@@ -408,6 +408,6 @@ ssh "$MOVE_HOST" '/home/root/xovi/start || systemctl start xochitl'
 
 新 Agent 可以这样向用户确认：
 
-> 我已经阅读 AGENTS.md、docs/agent-handoff.md 和需要时的 docs/agent-upgrade-v1.5.md。当前源码基线是 1.5.0 source-only 里程碑，没有公开二进制或 v1.5.0 标签。接下来我会先检查本地 Git 是否健康并运行仓库安全检查和全套验证，不读取或输出账号、书架、百度凭据和设备日志原文。涉及设备部署、根分区、重启、账号或数据删除前，我会先说明影响并等你确认。
+> 我已经阅读 AGENTS.md、docs/agent-handoff.md 和当前版本对应的发布说明；从 1.5 升级时也已阅读 docs/agent-upgrade-v1.5.md。当前源码基线是 2.0.0 source-only 里程碑，没有公开二进制或 v2.0.0 标签。接下来我会先检查本地 Git 是否健康并运行仓库安全检查和全套验证，不读取或输出账号、书架、百度或 DeepSeek 凭据和设备日志原文。涉及设备部署、根分区、重启、账号或数据删除前，我会先说明影响并等你确认。
 
 完成这些后，再根据用户的新目标进入实现，不要重新从旧 KOReader UI 或早期设计稿开始。
