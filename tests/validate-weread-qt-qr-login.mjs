@@ -7,6 +7,8 @@ function assert(condition, message) {
 const header = fs.readFileSync('apps/weread-qt/account_store.h', 'utf8');
 const source = fs.readFileSync('apps/weread-qt/account_store.cpp', 'utf8');
 const qml = fs.readFileSync('apps/weread-qt/Main.qml', 'utf8');
+const qrLogin = fs.readFileSync('apps/weread-qt/QrLoginScreen.qml', 'utf8');
+const cmake = fs.readFileSync('apps/weread-qt/CMakeLists.txt', 'utf8');
 const helper = fs.readFileSync('apps/weread-move/tools/login-qr.lua', 'utf8');
 const logoutHelper = fs.readFileSync('apps/weread-move/tools/logout.lua', 'utf8');
 const configBridge = fs.readFileSync('apps/weread-move/lib/config_bridge.lua', 'utf8');
@@ -18,7 +20,9 @@ assert(header.includes('~AccountStore() override') && source.includes('m_process
 assert(source.includes('m_loginSucceededPending') && source.includes('emit loginSucceeded()'), 'completed login must be emitted only after cookies are persisted');
 assert(source.includes('RM_WEREAD_LOGIN_TIMEOUT') && source.includes('180'), 'device QR login must allow enough time for phone confirmation');
 assert(qml.includes('property bool showQrLogin'), 'app must own a full-screen QR login state');
-assert(qml.includes('id: qrLoginScreen') && qml.includes('width: 560') && qml.includes('fullScreenLoginQrImage'), 'QR login must render a large high-contrast code on the Move');
+assert(cmake.includes('QrLoginScreen.qml'), 'Qt build must package the QR login component');
+assert(qml.includes('QrLoginScreen') && qrLogin.includes('width: 560') && qrLogin.includes('fullScreenLoginQrImage'), 'QR login must render a large high-contrast code on the Move');
+assert(qrLogin.includes('signal cancelRequested()') && qrLogin.includes('signal retryRequested()'), 'QR login component must expose explicit parent actions');
 assert(qml.includes('accountStore.refresh()') && qml.includes('accountInitialCheckComplete'), 'startup must check whether device login is required');
 assert(qml.includes('!accountStore.cookieConfigured') && qml.includes('root.openQrLogin()'), 'missing cookies must automatically open device login');
 assert(qml.includes('function onLoginSucceeded()') && qml.includes('shelfStore.refreshShelf()'), 'successful phone confirmation must close login and sync the shelf');

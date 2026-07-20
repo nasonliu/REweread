@@ -62,7 +62,7 @@ qt_add_qml_module(rm_weread_qt
     URI WeReadMove
     VERSION 1.0
     SOURCES ink_canvas_item.cpp ink_canvas_item.h magic_reply_ink_item.cpp magic_reply_ink_item.h
-    QML_FILES Main.qml PinyinEngine.js PinyinLexicon.js FreeNoteAnchor.js SocialAnchor.js
+    QML_FILES Main.qml SleepCoverScreen.qml QrLoginScreen.qml PinyinEngine.js PinyinLexicon.js FreeNoteAnchor.js SocialAnchor.js
 )
 
 target_link_libraries(rm_weread_qt PRIVATE Qt6::Quick Qt6::Network ${CMAKE_DL_LIBS})

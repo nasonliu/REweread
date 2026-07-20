@@ -3671,9 +3671,9 @@ Window {
         onTriggered: {
             attempts += 1
             root.showQrLogin = true
-            if (accountStore.loginConfirmUrl !== "" && fullScreenLoginQrImage.status === Image.Ready) {
+            if (accountStore.loginConfirmUrl !== "" && qrLoginScreen.qrImage.status === Image.Ready) {
                 console.log("qr-login-ui-selftest=ok urlLength=" + accountStore.loginConfirmUrl.length +
-                            " image=" + fullScreenLoginQrImage.width + "x" + fullScreenLoginQrImage.height)
+                            " image=" + qrLoginScreen.qrImage.width + "x" + qrLoginScreen.qrImage.height)
                 accountStore.cancelQrLogin()
                 stop()
                 appControl.quitToSystem()
@@ -10666,201 +10666,30 @@ Window {
         }
     }
 
-    Rectangle {
+    SleepCoverScreen {
         id: sleepCoverScreen
         anchors.fill: parent
         visible: root.sleepOverlayVisible
         z: 100
-        color: "#ffffff"
-
-        Image {
-            id: sleepCoverImage
-            anchors.centerIn: parent
-            width: Math.min(parent.width - 80, Math.round((parent.height - 132) * root.coverAspectRatio))
-            height: Math.min(parent.height - 132, Math.round(width / root.coverAspectRatio))
-            source: root.sleepCoverSource
-            fillMode: Image.PreserveAspectFit
-            cache: true
-            asynchronous: false
-            visible: source !== ""
-        }
-
-        Rectangle {
-            anchors.centerIn: parent
-            width: parent.width - 128
-            height: 420
-            visible: root.sleepCoverSource === ""
-            color: "#ffffff"
-            border.color: root.inkColor
-            border.width: 3
-
-            Text {
-                anchors.fill: parent
-                anchors.margins: 48
-                text: root.sleepBookTitle
-                color: root.inkColor
-                font.family: root.readerFontFamily
-                font.pixelSize: 44
-                font.bold: true
-                wrapMode: Text.Wrap
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-            }
-        }
+        coverSource: root.sleepCoverSource
+        bookTitle: root.sleepBookTitle
+        readerFontFamily: root.readerFontFamily
+        inkColor: root.inkColor
+        coverAspectRatio: root.coverAspectRatio
     }
 
-    Rectangle {
+    QrLoginScreen {
         id: qrLoginScreen
         anchors.fill: parent
         visible: root.showQrLogin
         z: 95
-        color: "#ffffff"
-
-        MouseArea {
-            anchors.fill: parent
-        }
-
-        Text {
-            x: 56
-            y: 72
-            width: parent.width - 112
-            height: 64
-            text: "登录微信读书"
-            color: root.inkColor
-            font.pixelSize: 42
-            font.bold: true
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
-
-        Text {
-            x: 56
-            y: 142
-            width: parent.width - 112
-            height: 54
-            text: accountStore.loginConfirmUrl === "" ? "正在生成二维码" : "请使用微信扫描二维码"
-            color: root.inkColor
-            font.pixelSize: 27
-            font.bold: true
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
-
-        Image {
-            id: fullScreenLoginQrImage
-            x: Math.round((parent.width - width) / 2)
-            y: 226
-            width: 560
-            height: 560
-            source: accountStore.loginConfirmUrl === "" ? "" : "image://wereadqr/" + encodeURIComponent(accountStore.loginConfirmUrl)
-            fillMode: Image.PreserveAspectFit
-            cache: false
-            smooth: false
-            visible: source !== ""
-        }
-
-        Rectangle {
-            x: Math.round((parent.width - width) / 2)
-            y: 226
-            width: 560
-            height: 560
-            visible: accountStore.loginConfirmUrl === ""
-            color: "#ffffff"
-            border.color: root.inkColor
-            border.width: 3
-
-            Text {
-                anchors.centerIn: parent
-                text: accountStore.loginRunning ? "请稍候" : "二维码生成失败"
-                color: root.inkColor
-                font.pixelSize: 30
-                font.bold: true
-            }
-        }
-
-        Text {
-            x: 72
-            y: 824
-            width: parent.width - 144
-            height: 92
-            text: accountStore.loginStatusText
-            color: root.inkColor
-            font.pixelSize: 25
-            font.bold: true
-            wrapMode: Text.WordWrap
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
-
-        Text {
-            x: 72
-            y: 928
-            width: parent.width - 144
-            height: 64
-            text: "扫码后在手机上确认登录"
-            color: root.inkColor
-            font.pixelSize: 23
-            font.bold: true
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
-
-        Row {
-            x: 96
-            y: parent.height - 154
-            width: parent.width - 192
-            height: 66
-            spacing: 18
-
-            Rectangle {
-                width: accountStore.loginRunning ? parent.width : Math.floor((parent.width - 18) / 2)
-                height: parent.height
-                radius: 4
-                color: "#ffffff"
-                border.color: root.inkColor
-                border.width: 2
-
-                Text {
-                    anchors.fill: parent
-                    text: "取消"
-                    color: root.inkColor
-                    font.pixelSize: 24
-                    font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: root.closeQrLogin()
-                }
-            }
-
-            Rectangle {
-                width: Math.floor((parent.width - 18) / 2)
-                height: parent.height
-                visible: !accountStore.loginRunning
-                radius: 4
-                color: root.brandGreenDark
-                border.color: root.inkColor
-                border.width: 2
-
-                Text {
-                    anchors.fill: parent
-                    text: "重新生成"
-                    color: "#ffffff"
-                    font.pixelSize: 24
-                    font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: root.openQrLogin()
-                }
-            }
-        }
+        inkColor: root.inkColor
+        brandGreenDark: root.brandGreenDark
+        loginConfirmUrl: accountStore.loginConfirmUrl
+        loginRunning: accountStore.loginRunning
+        loginStatusText: accountStore.loginStatusText
+        onCancelRequested: root.closeQrLogin()
+        onRetryRequested: root.openQrLogin()
     }
 
 }

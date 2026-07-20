@@ -7,6 +7,7 @@ function assert(condition, message) {
 const header = fs.readFileSync('apps/weread-qt/power_store.h', 'utf8');
 const source = fs.readFileSync('apps/weread-qt/power_store.cpp', 'utf8');
 const qml = fs.readFileSync('apps/weread-qt/Main.qml', 'utf8');
+const sleepCover = fs.readFileSync('apps/weread-qt/SleepCoverScreen.qml', 'utf8');
 const cmake = fs.readFileSync('apps/weread-qt/CMakeLists.txt', 'utf8');
 const main = fs.readFileSync('apps/weread-qt/main.cpp', 'utf8');
 const session = fs.readFileSync('scripts/weread-qt-session.sh', 'utf8');
@@ -34,8 +35,10 @@ assert(source.includes('vpdd_timeout_ms') && source.includes('power-sleep wait-v
 assert(!source.includes('/sys/power/state'), 'reader power handling must not bypass the official systemd sleep hooks');
 assert(source.indexOf('acquireWakeLock();', source.indexOf('void PowerStore::resume')) < source.indexOf('m_sleeping = false', source.indexOf('void PowerStore::resume')), 'resume must reacquire the wake lock before restoring UI state');
 assert(cmake.includes('power_store.cpp'), 'Qt build must compile PowerStore');
+assert(cmake.includes('SleepCoverScreen.qml'), 'Qt build must package the sleep cover component');
 assert(main.includes('setContextProperty("powerStore"'), 'PowerStore must be available to QML');
-assert(qml.includes('readerStore.saveProgress') && qml.includes('sleepCoverScreen'), 'sleep UI must save reading position and render the current cover');
+assert(qml.includes('readerStore.saveProgress') && qml.includes('SleepCoverScreen'), 'sleep UI must save reading position and render the current cover');
+assert(sleepCover.includes('required property string coverSource') && sleepCover.includes('Image.PreserveAspectFit'), 'sleep cover component must render the current cover through an explicit interface');
 assert(qml.includes('interval: 750') && qml.includes('powerStore.commitSleep()'), 'cover must get a render window before autosuspend');
 assert(networkHeader.includes('prepareForSleep()') && networkHeader.includes('resumeAfterSleep()'), 'network bridge must expose the sleep lifecycle');
 assert(networkHeader.includes('m_resumeReconnectTimer') && networkSource.includes('m_resumeReconnectTimer.stop()'), 'a repeated sleep must cancel a pending Wi-Fi reconnect');
