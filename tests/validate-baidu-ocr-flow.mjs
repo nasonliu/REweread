@@ -10,7 +10,14 @@ const assert = (condition, message) => {
 const storeHeader = read('apps/weread-qt/ocr_store.h');
 const store = read('apps/weread-qt/ocr_store.cpp');
 const server = read('apps/weread-qt/ocr_setup_server.cpp');
-const qml = read('apps/weread-qt/Main.qml');
+const qml = [
+  'Main.qml',
+  'ShelfPage.qml',
+  'BookDetailPage.qml',
+  'ReaderPage.qml',
+  'MagicNotebookPage.qml',
+  'SoftKeyboardPanel.qml',
+].map((name) => read(`apps/weread-qt/${name}`)).join('\n');
 const docs = read('docs/baidu-ocr-configuration-flow.md');
 
 assert(storeHeader.includes('verifyAndSaveCredentials'), 'credential verification must be restricted to the native setup path');
@@ -34,7 +41,7 @@ assert(qml.includes('setParagraphNoteOcrText') && qml.includes('recognizeParagra
 assert(qml.includes('recognizeReaderInkBlock') && qml.includes('beginDirectHandwritingOcr'), 'selected reader ink blocks must start OCR without a second window');
 assert(!qml.includes('id: handwritingOcrScreen') && !qml.includes('showHandwritingOcr = true'), 'reader and search OCR must not open the removed full-screen recognition window');
 assert(qml.includes('id: keyboardHandwritingPad') && qml.includes('id: keyboardHandwritingInk'), 'the built-in keyboard must provide a native handwriting pad');
-assert(qml.includes('keyboardHandwritingPad.mapFromItem(root.contentItem') && !qml.includes('keyboardHandwritingPad.mapFromItem(root,'), 'handwriting coordinates must map through the Window content item');
+assert(qml.includes('softKeyboardPanel.handwritingPad.mapFromItem(root.contentItem') && !qml.includes('softKeyboardPanel.handwritingPad.mapFromItem(root,'), 'handwriting coordinates must map through the Window content item');
 assert(qml.includes('{"mode": "pinyin", "label": "拼音"}') && qml.includes('{"mode": "handwriting", "label": "手写"}') && qml.includes('{"mode": "english", "label": "英文"}'), 'keyboard input modes must be independently selectable');
 assert(qml.includes('keyboardRecognizeHandwriting') && qml.includes('keyboardChooseHandwritingCandidate'), 'handwriting keyboard must recognize explicitly and commit a selected result');
 assert(qml.includes('ocr-setup-selftest=ok') && qml.includes('runOcrSetupSelfTest'), 'device must self-test the explicit HTTPS setup service without exposing its pairing data');

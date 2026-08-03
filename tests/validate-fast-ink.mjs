@@ -7,7 +7,12 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
-const qml = read('apps/weread-qt/Main.qml');
+const qml = [
+  'Main.qml',
+  'MagicNotebookPage.qml',
+  'ReaderPage.qml',
+  'SoftKeyboardPanel.qml',
+].map((name) => read(`apps/weread-qt/${name}`)).join('\n');
 const inkHeader = read('apps/weread-qt/ink_canvas_item.h');
 const inkCpp = read('apps/weread-qt/ink_canvas_item.cpp');
 const directInkHeader = read('apps/weread-qt/direct_ink_framebuffer.h');
@@ -20,8 +25,8 @@ const readerCpp = read('apps/weread-qt/reader_store.cpp');
 
 assert(qml.includes('InkCanvas {') && qml.includes('id: readerInkCanvas'), 'reader must use the native ink item');
 assert(!qml.includes('id: readerMarkerPreviewCanvas'), 'reader must not full-redraw a QML Canvas for every pen sample');
-assert(qml.includes('readerInkCanvas.beginStroke') && qml.includes('readerInkCanvas.appendPoint'), 'pen samples must append only the newest segment');
-assert(qml.includes('readerInkCanvas.finishStroke()'), 'pen-up must finish the temporary ink layer');
+assert(qml.includes('readerPage.inkCanvas.beginStroke') && qml.includes('readerPage.inkCanvas.appendPoint'), 'pen samples must append only the newest segment');
+assert(qml.includes('readerPage.inkCanvas.finishStroke()'), 'pen-up must finish the temporary ink layer');
 const appendSnippet = qml.slice(qml.indexOf('function appendStylusStroke'), qml.indexOf('function endStylusStroke'));
 assert(!appendSnippet.includes('points.slice()'), 'live pen input must not copy the complete stroke on every point');
 
@@ -54,7 +59,7 @@ const freeStrokeSaveSnippet = qml.slice(qml.indexOf('function saveCurrentFreeInk
 assert(freeStrokeSaveSnippet.includes('pendingFreeInkStrokes') && freeStrokeSaveSnippet.includes('readerInkPersistTimer.restart()'), 'freehand pen-up must queue persistence until the user pauses');
 assert(!freeStrokeSaveSnippet.includes('readerStore.addPageStroke('), 'freehand pen-up must not synchronously serialize the complete strokes file');
 assert(qml.includes('id: readerInkPersistTimer') && qml.includes('function flushPendingFreeInkStrokes'), 'queued ink must persist after a short idle period and before a page turn');
-assert(qml.includes('strokes: root.readerVisibleInkStrokes()'), 'queued strokes must remain visible before disk persistence finishes');
+assert(qml.includes('strokes: appRoot.readerVisibleInkStrokes()'), 'queued strokes must remain visible before disk persistence finishes');
 assert(qml.includes('readerInkPersistTimer.stop()') && qml.includes('currentFreeNotePoints || []).length > 0'), 'page persistence must never run while a freehand stroke is active');
 assert(qml.includes('clientStrokeId') && readerCpp.includes('clientStrokeId'), 'pending and persisted forms of one stroke must be deduplicated during the save handoff');
 assert(inkCpp.includes('sameStoredStrokeVisual') && inkCpp.includes('!sameStoredStrokeVisual(m_strokes.at(index), strokes.at(index))'), 'metadata-only persistence changes must not rebuild and refresh the ink canvas');
@@ -63,7 +68,7 @@ assert(readerHeader.includes('setPageInkBlockOcrText') && readerCpp.includes('vo
 assert(readerHeader.includes('removePageInkBlock') && readerCpp.includes('void ReaderStore::removePageInkBlock'), 'contextual delete must remove only the selected ink block');
 assert(stylusHeader.includes('Q_PROPERTY(bool palmRejectionActive') && stylusHeader.includes('m_palmReleaseTimer'), 'StylusStore must expose pen-proximity palm rejection with a short release tail');
 assert(qml.includes('id: readerPalmRejectionLayer') && qml.includes('stylusStore.palmRejectionActive'), 'reader must consume all finger gestures while the pen is in range');
-assert(qml.includes('id: keyboardHandwritingInk') && qml.includes('keyboardHandwritingInk.beginStroke'), 'handwriting IME must reuse the validated native fast-ink path');
+assert(qml.includes('id: keyboardHandwritingInk') && qml.includes('softKeyboardPanel.handwritingInk.beginStroke'), 'handwriting IME must reuse the validated native fast-ink path');
 assert(qml.includes('beginKeyboardHandwritingStroke(x, y)') && qml.includes('appendKeyboardHandwritingStroke(x, y)'), 'raw stylus samples must be routed directly into the handwriting keyboard');
 assert(qml.includes('|| root.showSoftKeyboard)'), 'raw stylus capture must already be active before switching keyboard modes');
 const finishStrokeSnippet = inkCpp.slice(inkCpp.indexOf('void InkCanvasItem::finishStroke()'), inkCpp.indexOf('void InkCanvasItem::paint'));
